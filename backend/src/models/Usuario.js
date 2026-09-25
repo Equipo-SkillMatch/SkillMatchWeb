@@ -11,7 +11,7 @@ class Usuario {
 
   static async findById(id_usuario) {
     const [rows] = await db.query(
-      `SELECT id_usuario, nombre, apellido, correo, telefono, foto_perfil, id_rol, estado, fecha_registro
+      `SELECT id_usuario, nombre, apellido, correo, telefono, foto_perfil, id_rol, estado, fecha_registro, cargo_institucional, area_institucional, extension, oficina, bio_profesional
        FROM usuarios
        WHERE id_usuario = ?
        LIMIT 1`,

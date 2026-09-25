@@ -3,7 +3,7 @@ const db = require('../config/db');
 class SoftSkills {
   static async getPreguntasActivas() {
     const [rows] = await db.query(`
-      SELECT id_pregunta, competencia, pregunta, orden
+      SELECT id_pregunta, competencia, pregunta, orden, inversa
       FROM soft_skills_preguntas
       WHERE activa = true
       ORDER BY orden ASC, id_pregunta ASC
@@ -37,12 +37,15 @@ class SoftSkills {
       if (!Number.isFinite(valor) || valor < 1 || valor > 5) return;
 
       const competencia = pregunta.competencia;
+      const valorCalculado = pregunta.inversa ? (6 - valor) : valor;
       if (!grupos[competencia]) grupos[competencia] = [];
-      grupos[competencia].push(valor);
+      grupos[competencia].push(valorCalculado);
       respuestasNormalizadas.push({
         id_pregunta: idPregunta,
         competencia,
         valor,
+        inversa: Boolean(pregunta.inversa),
+        valor_calculado: valorCalculado,
       });
     });
 

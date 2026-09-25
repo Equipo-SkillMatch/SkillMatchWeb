@@ -5,6 +5,7 @@ const Proyecto = require('../models/Proyecto');
 const Evidencia = require('../models/Evidencia');
 const Usuario = require('../models/Usuario'); // Necesitamos este modelo para buscar al colaborador por correo
 const SoftSkills = require('../models/SoftSkills');
+const { uploadedFilePath } = require('../utils/fileUrl');
 
 const MAX_CUATRIMESTRE = 11;
 
@@ -19,10 +20,7 @@ function normalizarLista(value) {
 }
 
 function rutaProyectoArchivo(file) {
-  if (!file) return null;
-  if (file.path && String(file.path).startsWith('http')) return file.path;
-  if (file.filename) return `proyectos/${file.filename}`;
-  return file.path || null;
+  return uploadedFilePath(file, 'proyectos');
 }
 
 function obtenerArchivosProyecto(req) {
@@ -31,9 +29,7 @@ function obtenerArchivosProyecto(req) {
     ...(req.files?.media || []),
   ];
 
-  if (principal && !media.some((f) => f.filename === principal.filename && f.originalname === principal.originalname)) {
-    media.unshift(principal);
-  }
+  // La portada se guarda por separado. No debe duplicarse dentro de la galeria.
 
   const mediaNormalizada = media
     .map((file) => ({
@@ -44,7 +40,7 @@ function obtenerArchivosProyecto(req) {
     }))
     .filter((file) => file.ruta_archivo);
 
-  const principalRuta = principal ? rutaProyectoArchivo(principal) : (mediaNormalizada[0]?.ruta_archivo || null);
+  const principalRuta = principal ? rutaProyectoArchivo(principal) : null;
   return { principalRuta, media: mediaNormalizada };
 }
 
@@ -229,6 +225,7 @@ exports.actualizarPerfil = async (req, res) => {
       semestre,
       cuatrimestre_inicial,
       fecha_inicio_carrera,
+      titulo_profesional, biografia, linkedin, github, portafolio, idiomas, disponibilidad, modalidad_preferida, ciudad,
       nueva_password
     } = req.body;
 
@@ -253,7 +250,7 @@ exports.actualizarPerfil = async (req, res) => {
       fecha_inicio_carrera: fechaInicio,
     });
 
-    const fotoPerfil = req.file ? `perfiles/${req.file.filename}` : null;
+    const fotoPerfil = uploadedFilePath(req.file, 'perfiles');
     const passwordHash = nueva_password ? await bcrypt.hash(String(nueva_password), 10) : null;
 
     await conn.beginTransaction();
@@ -281,7 +278,9 @@ exports.actualizarPerfil = async (req, res) => {
     await conn.query(
       `UPDATE estudiantes
        SET matricula = ?, carrera = ?, semestre = ?, cuatrimestre_inicial = ?,
-           fecha_inicio_carrera = ?, estado_academico = ?
+           fecha_inicio_carrera = ?, estado_academico = ?,
+           titulo_profesional = ?, biografia = ?, linkedin = ?, github = ?, portafolio = ?,
+           idiomas = ?, disponibilidad = ?, modalidad_preferida = ?, ciudad = ?
        WHERE id_estudiante = ?`,
       [
         matricula || null,
@@ -290,6 +289,15 @@ exports.actualizarPerfil = async (req, res) => {
         inicial,
         fechaInicio,
         situacion.estado_academico,
+        titulo_profesional || null,
+        biografia || null,
+        linkedin || null,
+        github || null,
+        portafolio || null,
+        idiomas || null,
+        disponibilidad || null,
+        modalidad_preferida || null,
+        ciudad || null,
         id_usuario
       ]
     );

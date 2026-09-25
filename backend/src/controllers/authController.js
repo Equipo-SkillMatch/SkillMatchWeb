@@ -8,6 +8,7 @@ const Profesor = require('../models/Profesor');
 const forge = require('node-forge');
 const CryptoJS = require('crypto-js');
 const { securityLog } = require('../utils/securityLogger');
+const { uploadedFilePath } = require('../utils/fileUrl');
 
 // ==========================================
 // SEGURIDAD: GENERACIÓN DE LLAVES RSA (ESCENARIO 1)
@@ -499,7 +500,7 @@ exports.actualizarMiPerfil = async (req, res) => {
 
     if (req.file) {
       updates.push('foto_perfil = ?');
-      params.push(`perfiles/${req.file.filename}`);
+      params.push(uploadedFilePath(req.file, 'perfiles'));
     }
 
     if (nueva_password) {

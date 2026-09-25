@@ -4,6 +4,7 @@ const db = require('../config/db');
 const Usuario = require('../models/Usuario');
 const Empresa = require('../models/Empresa');
 const Vacante = require('../models/Vacante');
+const { uploadedFilePath } = require('../utils/fileUrl');
 
 const ROL_ADMIN = 1;
 const ROL_VINCULACION = 5;
@@ -310,7 +311,7 @@ exports.actualizarMiPerfil = async (req, res) => {
 
   try {
     const id_usuario = req.usuario.id_usuario;
-    const { nombre, apellido, telefono, nueva_password, confirmar_password } = req.body;
+    const { nombre, apellido, telefono, cargo_institucional, area_institucional, extension, oficina, bio_profesional, nueva_password, confirmar_password } = req.body;
     if (!nombre || !apellido) return res.status(400).json({ ok: false, mensaje: 'Nombre y apellido son obligatorios.' });
     if (nueva_password && String(nueva_password).length < 8) {
       return res.status(400).json({ ok: false, mensaje: 'La nueva contraseña debe tener al menos 8 caracteres.' });
@@ -319,9 +320,9 @@ exports.actualizarMiPerfil = async (req, res) => {
       return res.status(400).json({ ok: false, mensaje: 'La nueva contraseña y su confirmación no coinciden.' });
     }
 
-    const updates = ['nombre = ?', 'apellido = ?', 'telefono = ?'];
-    const params = [nombre, apellido, telefono || null];
-    if (req.file) { updates.push('foto_perfil = ?'); params.push(`perfiles/${req.file.filename}`); }
+    const updates = ['nombre = ?', 'apellido = ?', 'telefono = ?', 'cargo_institucional = ?', 'area_institucional = ?', 'extension = ?', 'oficina = ?', 'bio_profesional = ?'];
+    const params = [nombre, apellido, telefono || null, cargo_institucional || null, area_institucional || null, extension || null, oficina || null, bio_profesional || null];
+    if (req.file) { updates.push('foto_perfil = ?'); params.push(uploadedFilePath(req.file, 'perfiles')); }
     if (nueva_password) { updates.push('password_hash = ?'); params.push(await bcrypt.hash(String(nueva_password), 10)); }
     params.push(id_usuario);
 

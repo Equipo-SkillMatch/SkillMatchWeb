@@ -3,6 +3,7 @@ const db = require('../config/db');
 const Proyecto = require('../models/Proyecto');
 const HorarioProfesor = require('../models/HorarioProfesor');
 const Usuario = require('../models/Usuario');
+const { uploadedFilePath } = require('../utils/fileUrl');
 
 
 function normalizarLista(value) {
@@ -16,30 +17,25 @@ function normalizarLista(value) {
 }
 
 function rutaProyectoArchivo(file) {
-  if (!file) return null;
-  if (file.path && String(file.path).startsWith('http')) return file.path;
-  if (file.filename) return `proyectos/${file.filename}`;
-  return file.path || null;
+  return uploadedFilePath(file, 'proyectos');
 }
 
 function obtenerArchivosProyecto(req) {
   const principal = req.files?.img_principal?.[0] || req.file || null;
   const media = [...(req.files?.media || [])];
-  if (principal && !media.some((f) => f.filename === principal.filename && f.originalname === principal.originalname)) {
-    media.unshift(principal);
-  }
+  // La portada se guarda por separado. No debe duplicarse dentro de la galeria.
   const mediaNormalizada = media.map((file) => ({
     ...file,
     ruta_archivo: rutaProyectoArchivo(file),
     nombre_original: file.originalname,
     mime_type: file.mimetype,
   })).filter((file) => file.ruta_archivo);
-  return { principalRuta: principal ? rutaProyectoArchivo(principal) : (mediaNormalizada[0]?.ruta_archivo || null), media: mediaNormalizada };
+  return { principalRuta: principal ? rutaProyectoArchivo(principal) : null, media: mediaNormalizada };
 }
 
 const obtenerIdProfesorDesdeToken = async (req) => {
   const id_usuario = req.usuario.id_usuario;
-  const [rows] = await db.query('SELECT id_profesor, departamento, asignaturas FROM profesores WHERE id_profesor = ?', [id_usuario]);
+  const [rows] = await db.query('SELECT * FROM profesores WHERE id_profesor = ?', [id_usuario]);
   return rows.length > 0 ? rows[0] : null;
 };
 
@@ -251,7 +247,7 @@ exports.actualizarPerfil = async (req, res) => {
   const conn = await db.getConnection();
   try {
     const id_usuario = req.usuario.id_usuario;
-    const { nombre, apellido, telefono, departamento, asignaturas, nueva_password } = req.body;
+    const { nombre, apellido, telefono, departamento, asignaturas, grado_academico, especialidad, biografia, linkedin, orcid, horario_atencion, mentorias, nueva_password } = req.body;
 
     if (!nombre || !apellido) {
       return res.status(400).json({ ok: false, mensaje: 'Nombre y apellido son obligatorios.' });
@@ -260,7 +256,7 @@ exports.actualizarPerfil = async (req, res) => {
       return res.status(400).json({ ok: false, mensaje: 'La nueva contraseña debe tener al menos 8 caracteres.' });
     }
 
-    const fotoPerfil = req.file ? `perfiles/${req.file.filename}` : null;
+    const fotoPerfil = uploadedFilePath(req.file, 'perfiles');
     const passwordHash = nueva_password ? await bcrypt.hash(String(nueva_password), 10) : null;
 
     await conn.beginTransaction();
@@ -273,8 +269,10 @@ exports.actualizarPerfil = async (req, res) => {
 
     await conn.query(`UPDATE usuarios SET ${usuarioUpdates.join(', ')} WHERE id_usuario = ?`, params);
     await conn.query(
-      `UPDATE profesores SET departamento = ?, asignaturas = ? WHERE id_profesor = ?`,
-      [departamento || null, asignaturas || null, id_usuario]
+      `UPDATE profesores
+       SET departamento = ?, asignaturas = ?, grado_academico = ?, especialidad = ?, biografia = ?, linkedin = ?, orcid = ?, horario_atencion = ?, mentorias = ?
+       WHERE id_profesor = ?`,
+      [departamento || null, asignaturas || null, grado_academico || null, especialidad || null, biografia || null, linkedin || null, orcid || null, horario_atencion || null, String(mentorias) === 'true', id_usuario]
     );
 
     await conn.commit();

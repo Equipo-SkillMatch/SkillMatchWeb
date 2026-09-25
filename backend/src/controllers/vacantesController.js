@@ -46,6 +46,37 @@ function mapEstudiante(est) {
   };
 }
 
+
+function normalizarSkill(value) {
+  return normalizarTexto(String(value || '').replace(/\./g, ' ')).trim();
+}
+
+function calcularMatch(estudiante, skillsSolicitadas = []) {
+  const requeridas = [...new Set(skillsSolicitadas.map(normalizarSkill).filter(Boolean))];
+  const disponibles = (estudiante.habilidades || []).map((h) => ({ original: h, normal: normalizarSkill(h) }));
+  const coincidencias = requeridas.filter((req) => disponibles.some((h) => h.normal.includes(req) || req.includes(h.normal)));
+  const faltantes = requeridas.filter((req) => !coincidencias.includes(req));
+
+  // Score explicable. Tecnologias pesan 75% y soft skills 25% cuando existe evaluacion.
+  const techScore = requeridas.length ? Math.round((coincidencias.length / requeridas.length) * 100) : 100;
+  const softScore = estudiante.habilidades_blandas?.completado ? Number(estudiante.habilidades_blandas.puntaje_total || 0) : null;
+  const score = softScore === null
+    ? techScore
+    : Math.round((techScore * 0.75) + (softScore * 0.25));
+
+  return {
+    ...estudiante,
+    match_score: Math.max(0, Math.min(100, score)),
+    match_detalle: {
+      tecnologias: techScore,
+      habilidades_blandas: softScore,
+      coincidencias,
+      faltantes,
+      total_requeridas: requeridas.length,
+    },
+  };
+}
+
 function filtrarPorNombre(estudiantes, nombreBuscado) {
   if (!nombreBuscado || !String(nombreBuscado).trim()) return estudiantes;
   return estudiantes.filter((e) => coincideNombreBusqueda(e.nombre_busqueda || e.nombre, nombreBuscado));
@@ -54,9 +85,15 @@ function filtrarPorNombre(estudiantes, nombreBuscado) {
 exports.realizarMatchEstudiantes = async (req, res) => {
   try {
     const nombre = req.query.nombre || req.query.busqueda || '';
+    const skills = String(req.query.skills || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     const estudiantesDB = await Vacante.getEstudiantesParaMatch();
-    const estudiantesMatch = filtrarPorNombre(estudiantesDB.map(mapEstudiante), nombre);
-    res.status(200).json({ ok: true, estudiantes: estudiantesMatch });
+    const estudiantesMatch = filtrarPorNombre(estudiantesDB.map(mapEstudiante), nombre)
+      .map((est) => calcularMatch(est, skills))
+      .sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+    res.status(200).json({ ok: true, estudiantes: estudiantesMatch, criterios: skills });
   } catch (error) {
     console.error('Error en realizarMatchEstudiantes:', error);
     res.status(500).json({ ok: false, mensaje: 'Error al generar el Match' });

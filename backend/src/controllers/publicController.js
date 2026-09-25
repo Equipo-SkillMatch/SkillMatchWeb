@@ -1,33 +1,46 @@
 const Proyecto = require('../models/Proyecto');
-const db = require('../config/db'); 
+const db = require('../config/db');
+const { isSameAsset } = require('../utils/fileUrl');
+
+
+function limpiarGaleria(media = [], portada = null) {
+  return (Array.isArray(media) ? media : []).filter((item) => {
+    const ruta = item?.ruta_archivo;
+    return ruta && !isSameAsset(ruta, portada);
+  });
+}
 
 exports.listarProyectosPublicos = async (req, res) => {
   try {
     const proyectos = await Proyecto.findPublicProjects();
 
-    const proyectosFormateados = proyectos.map((p, index) => ({
-      id_proyecto: p.id_proyecto,
-      title: p.titulo,
-      titulo: p.titulo,
-      desc: p.descripcion || 'Proyecto académico publicado en SkillMatch.',
-      descripcion: p.descripcion,
-      author: `${p.nombre || ''} ${p.apellido || ''}`.trim() || 'Comunidad UTEQ',
-      nombre: p.nombre,
-      apellido: p.apellido,
-      foto_creador: p.foto_creador,
-      tipo_creador: p.tipo_creador,
-      carrera: p.carrera || 'UTEQ',
-      estado: p.estado,
-      fecha_registro: p.fecha_registro,
-      img_principal: p.img_principal || p.media?.find((m) => m.tipo === 'imagen')?.ruta_archivo || p.media?.[0]?.ruta_archivo || null,
-      media: p.media || [],
-      tecnologias: p.tecnologias || '',
-      tags: p.tecnologias ? String(p.tecnologias).split(',').map((t) => t.trim()).filter(Boolean).slice(0, 4) : (p.carrera ? [p.carrera] : ['Proyecto UTEQ']),
-      rating: parseFloat(p.promedio_estrellas || 0),
-      total_reviews: Number(p.total_calificaciones || 0),
-      thumb: (index % 3) + 1,
-      icon: ['🖥️', '📱', '🗄️'][index % 3],
-    }));
+    const proyectosFormateados = proyectos.map((p, index) => {
+      // Compatibilidad con proyectos antiguos: si no hay portada explícita, usa la primera imagen.
+      const portada = p.img_principal || p.media?.find((m) => m.tipo === 'imagen')?.ruta_archivo || p.media?.[0]?.ruta_archivo || null;
+      return {
+        id_proyecto: p.id_proyecto,
+        title: p.titulo,
+        titulo: p.titulo,
+        desc: p.descripcion || 'Proyecto académico publicado en SkillMatch.',
+        descripcion: p.descripcion,
+        author: `${p.nombre || ''} ${p.apellido || ''}`.trim() || 'Comunidad UTEQ',
+        nombre: p.nombre,
+        apellido: p.apellido,
+        foto_creador: p.foto_creador,
+        tipo_creador: p.tipo_creador,
+        carrera: p.carrera || 'UTEQ',
+        estado: p.estado,
+        fecha_registro: p.fecha_registro,
+        img_principal: portada,
+        media: limpiarGaleria(p.media, portada),
+        tecnologias: p.tecnologias || '',
+        tags: p.tecnologias ? String(p.tecnologias).split(',').map((t) => t.trim()).filter(Boolean).slice(0, 4) : (p.carrera ? [p.carrera] : ['Proyecto UTEQ']),
+        rating: parseFloat(p.promedio_estrellas || 0),
+        total_reviews: Number(p.total_calificaciones || 0),
+        thumb: (index % 3) + 1,
+        icon: ['🖥️', '📱', '🗄️'][index % 3],
+      };
+    });
 
     return res.status(200).json({ ok: true, proyectos: proyectosFormateados });
   } catch (error) {
@@ -65,7 +78,9 @@ exports.obtenerDetalleProyecto = async (req, res) => {
     }
 
     const p = proyectos[0];
-    const media = await Proyecto.getMedia(id);
+    const mediaOriginal = await Proyecto.getMedia(id);
+    const portada = p.img_principal || mediaOriginal.find((m) => m.tipo === 'imagen')?.ruta_archivo || mediaOriginal[0]?.ruta_archivo || null;
+    const media = limpiarGaleria(mediaOriginal, portada);
 
     const proyectoFormateado = {
       ...p,
@@ -76,7 +91,7 @@ exports.obtenerDetalleProyecto = async (req, res) => {
       total_reviews: Number(p.total_calificaciones || 0),
       tags: p.tecnologias ? String(p.tecnologias).split(',').map((t) => t.trim()).filter(Boolean) : (p.carrera ? [p.carrera] : []),
       media,
-      img_principal: p.img_principal || media.find((m) => m.tipo === 'imagen')?.ruta_archivo || media[0]?.ruta_archivo || null,
+      img_principal: portada,
     };
 
     const [evidencias] = await db.query(

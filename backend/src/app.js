@@ -29,7 +29,9 @@ app.use(
       },
 
     crossOriginResourcePolicy: {
-      policy: 'same-site',
+      // El frontend y la API pueden vivir en dominios distintos (p. ej. Vercel + Render).
+      // Las imagenes/videos publicos necesitan poder cargarse cross-origin.
+      policy: 'cross-origin',
     },
   })
 );
@@ -62,7 +64,11 @@ app.use(cors({
 }));
 app.use(express.json());
 
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  next();
+}, express.static(path.join(__dirname, '../uploads')));
 
 app.get('/', (req, res) => {
   res.send('API SkillMatch funcionando');
