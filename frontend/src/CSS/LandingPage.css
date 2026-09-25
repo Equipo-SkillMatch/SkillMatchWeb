@@ -2273,3 +2273,12 @@
     height: 68px;
   }
 }
+
+.project-placeholder.is-hidden { display: none; }
+
+/* SkillMatch V3: multimedia consistente en tarjetas públicas */
+.project-card__visual { display:block; width:100%; height:100%; object-fit:cover; }
+.project-placeholder { gap:8px; align-content:center; color:#fff; text-align:center; }
+.project-placeholder svg { opacity:.92; }
+.project-placeholder small { display:block; color:rgba(255,255,255,.78); font-size:11px; font-weight:700; letter-spacing:.02em; }
+.role-card__icon { color:var(--sm-blue-700); }

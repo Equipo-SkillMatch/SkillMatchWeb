@@ -1107,3 +1107,20 @@
     padding-left: 46px;
   }
 }
+
+/* SkillMatch v2: portada y galeria separadas */
+.project-detail-cover-card { position: relative; }
+.project-detail-cover-card .project-detail-cover,
+.project-detail-cover-card > img { width: 100%; min-height: 360px; max-height: 620px; object-fit: cover; display: block; }
+.project-detail-cover-label { position: absolute; left: 18px; bottom: 18px; padding: 8px 12px; border-radius: 999px; background: rgba(8, 36, 70, .88); color: #fff; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; backdrop-filter: blur(8px); }
+.project-detail-gallery-card { margin-top: 22px; }
+.project-detail-gallery-copy { margin: -4px 0 18px; color: #64748b; }
+.project-detail-gallery-card .project-detail-carousel { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(280px, 70%); gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 10px; }
+.project-detail-gallery-card .project-detail-slide { scroll-snap-align: start; border-radius: 18px; overflow: hidden; background: #eef4fa; min-height: 280px; }
+.project-detail-gallery-card .project-detail-slide img,
+.project-detail-gallery-card .project-detail-slide video { width: 100%; height: 100%; min-height: 280px; max-height: 520px; object-fit: cover; display: block; }
+@media (max-width: 720px) {
+  .project-detail-cover-card .project-detail-cover,
+  .project-detail-cover-card > img { min-height: 240px; }
+  .project-detail-gallery-card .project-detail-carousel { grid-auto-columns: 88%; }
+}

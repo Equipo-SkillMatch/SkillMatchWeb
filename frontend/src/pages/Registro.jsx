@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import '../CSS/Registro.css';
 import { API_BASE } from '../config/api';
 import BrandLogo from '../components/BrandLogo';
+import AppIcon from '../components/AppIcon';
 
 const carrerasDefault = [
   'Ing. en Desarrollo y Gestión de Software',
@@ -185,10 +186,10 @@ export default function Registro() {
 
           <div className="role-selector" role="tablist" aria-label="Tipo de perfil">
             <button type="button" className={role === 2 ? 'is-active' : ''} onClick={() => { setRole(2); setError(''); }}>
-              <span>🎓</span><div><strong>Estudiante</strong><small>Portafolio y vacantes</small></div>
+              <span><AppIcon name="graduation" size={22} /></span><div><strong>Estudiante</strong><small>Portafolio y vacantes</small></div>
             </button>
             <button type="button" className={role === 4 ? 'is-active' : ''} onClick={() => { setRole(4); setError(''); }}>
-              <span>🧑‍🏫</span><div><strong>Profesor</strong><small>Proyectos y seguimiento</small></div>
+              <span><AppIcon name="teacher" size={22} /></span><div><strong>Profesor</strong><small>Proyectos y seguimiento</small></div>
             </button>
           </div>
 

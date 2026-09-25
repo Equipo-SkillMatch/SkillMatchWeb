@@ -168,8 +168,10 @@ exports.getPerfilPublico = async (req, res) => {
     const [alumnoRows] = await db.query(`
       SELECT
         u.id_usuario, u.nombre, u.apellido, u.correo, u.telefono, u.foto_perfil,
-        e.id_estudiante, e.matricula, e.carrera, e.semestre,
-        e.cuatrimestre_inicial, e.fecha_inicio_carrera, e.estado_academico
+        e.id_estudiante, e.matricula, e.carrera, e.semestre, e.competencias,
+        e.cuatrimestre_inicial, e.fecha_inicio_carrera, e.estado_academico,
+        e.titulo_profesional, e.biografia, e.linkedin, e.github, e.portafolio,
+        e.idiomas, e.disponibilidad, e.modalidad_preferida, e.ciudad
       FROM usuarios u
       INNER JOIN estudiantes e ON u.id_usuario = e.id_estudiante
       WHERE u.id_usuario = ? AND u.id_rol = 2
@@ -185,18 +187,20 @@ exports.getPerfilPublico = async (req, res) => {
     const alumno = await sincronizarSituacionAcademica(db, alumnoRows[0]);
 
     const [proyectosRows] = await db.query(`
-      SELECT DISTINCT p.id_proyecto, p.titulo, p.descripcion, p.fecha_registro, p.estado
+      SELECT DISTINCT p.id_proyecto, p.titulo, p.descripcion, p.fecha_registro, p.estado,
+             p.img_principal, p.tecnologias, p.tipo, p.ambito, p.impacto
       FROM proyectos p
       WHERE p.id_estudiante = ?
       ORDER BY p.fecha_registro DESC
     `, [alumno.id_estudiante]);
 
+    const proyectosConMedia = await Proyecto.attachMedia(proyectosRows).catch(() => proyectosRows);
     const habilidadesBlandas = await SoftSkills.getResultadoByEstudiante(alumno.id_estudiante).catch(() => null);
 
     return res.json({
       ok: true,
       alumno: { ...alumno, habilidades_blandas: habilidadesBlandas },
-      proyectos: proyectosRows,
+      proyectos: proyectosConMedia,
       habilidades_blandas: habilidadesBlandas
     });
 
@@ -225,7 +229,7 @@ exports.actualizarPerfil = async (req, res) => {
       semestre,
       cuatrimestre_inicial,
       fecha_inicio_carrera,
-      titulo_profesional, biografia, linkedin, github, portafolio, idiomas, disponibilidad, modalidad_preferida, ciudad,
+      titulo_profesional, biografia, competencias, linkedin, github, portafolio, idiomas, disponibilidad, modalidad_preferida, ciudad,
       nueva_password
     } = req.body;
 
@@ -279,7 +283,7 @@ exports.actualizarPerfil = async (req, res) => {
       `UPDATE estudiantes
        SET matricula = ?, carrera = ?, semestre = ?, cuatrimestre_inicial = ?,
            fecha_inicio_carrera = ?, estado_academico = ?,
-           titulo_profesional = ?, biografia = ?, linkedin = ?, github = ?, portafolio = ?,
+           titulo_profesional = ?, biografia = ?, competencias = ?, linkedin = ?, github = ?, portafolio = ?,
            idiomas = ?, disponibilidad = ?, modalidad_preferida = ?, ciudad = ?
        WHERE id_estudiante = ?`,
       [
@@ -291,6 +295,7 @@ exports.actualizarPerfil = async (req, res) => {
         situacion.estado_academico,
         titulo_profesional || null,
         biografia || null,
+        competencias || null,
         linkedin || null,
         github || null,
         portafolio || null,
@@ -438,6 +443,15 @@ exports.obtenerDashboard = async (req, res) => {
           fecha_inicio_carrera: estudiante.fecha_inicio_carrera,
           estado_academico: estudiante.estado_academico,
           competencias: estudiante.competencias,
+          titulo_profesional: estudiante.titulo_profesional,
+          biografia: estudiante.biografia,
+          linkedin: estudiante.linkedin,
+          github: estudiante.github,
+          portafolio: estudiante.portafolio,
+          idiomas: estudiante.idiomas,
+          disponibilidad: estudiante.disponibilidad,
+          modalidad_preferida: estudiante.modalidad_preferida,
+          ciudad: estudiante.ciudad,
           habilidades_blandas: habilidadesBlandas
         },
         habilidades_blandas: habilidadesBlandas,

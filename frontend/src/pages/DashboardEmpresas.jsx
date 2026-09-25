@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import '../CSS/DashboardEmpresas.css';
 import { API_BASE, buildFileUrl } from '../config/api';
 import DashboardInsights from '../components/DashboardInsights';
+import AppIcon from '../components/AppIcon';
 
 // LISTA DE TECNOLOGÍAS PARA LAS BURBUJAS
 const TECH_OPTIONS = [
@@ -201,7 +202,7 @@ export default function DashboardEmpresas() {
   const guardarVacante = async () => {
     setFormError("");
     if (!formVacante.titulo || !formVacante.descripcion) {
-      return setFormError("⚠️ El título y la descripción son obligatorios.");
+      return setFormError("El título y la descripción son obligatorios.");
     }
 
     setSavingVacante(true);
@@ -280,28 +281,15 @@ export default function DashboardEmpresas() {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams();
       if (nombreBusqueda.trim()) params.set('nombre', nombreBusqueda.trim());
+      if (selectedSkills.length) params.set('skills', selectedSkills.join(','));
       const res = await fetch(`${API_BASE}/vacantes/match-estudiantes?${params.toString()}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const json = await res.json();
 
       if (json.ok) {
-        const todosLosAlumnosCompletos = json.estudiantes;
-        
-        const filtrados = todosLosAlumnosCompletos.filter(e => {
-          if (selectedSkills.length === 0) return true; 
-          if (!e.habilidades || e.habilidades.length === 0) return false;
-
-          const textoHabilidades = e.habilidades.join(' ').replace(/[\[\]"']/g, '').toLowerCase();
-
-          const tieneMatch = selectedSkills.some(burbuja => {
-             return textoHabilidades.includes(burbuja.toLowerCase());
-          });
-
-          return tieneMatch;
-        });
-
-        setEstudiantesMatch(filtrados);
+        // El backend calcula y ordena el porcentaje de compatibilidad.
+        setEstudiantesMatch(json.estudiantes || []);
       }
     } catch (error) {
       console.error("Error al buscar el match:", error);
@@ -346,16 +334,16 @@ export default function DashboardEmpresas() {
         <nav className="nav-section">
           <div className="nav-label">Principal</div>
           <div className={`nav-item ${view === "dashboard" ? "active" : ""}`} onClick={() => handleNavClick("dashboard")}>
-            <span className="icon">▦</span> Dashboard
+            <span className="icon"><AppIcon name="dashboard" /></span> Dashboard
           </div>
           <div className={`nav-item ${view === "perfil" ? "active" : ""}`} onClick={() => handleNavClick("perfil")}>
-            <span className="icon">◉</span> Perfil Empresa
+            <span className="icon"><AppIcon name="building" /></span> Perfil Empresa
           </div>
           <div className={`nav-item`} onClick={() => { abrirModalCrear(); setIsMobileMenuOpen(false); }}>
-            <span className="icon">+</span> Nueva Oferta
+            <span className="icon"><AppIcon name="plus" /></span> Nueva Oferta
           </div>
           <div className={`nav-item ${view === "candidatos" ? "active" : ""}`} onClick={() => handleNavClick("candidatos")}>
-            <span className="icon">◆</span> Candidatos
+            <span className="icon"><AppIcon name="target" /></span> Candidatos
           </div>
         </nav>
         <div className="sidebar-bottom">
@@ -363,7 +351,7 @@ export default function DashboardEmpresas() {
             onClick={() => { localStorage.removeItem('token'); window.location.href = '/'; }}
             style={{ width: "100%", padding: "10px", background: "rgba(239,68,68,0.2)", border: "1px solid #ef4444", borderRadius: "8px", color: "#fca5a5", fontWeight: "600", cursor: "pointer" }}
           >
-            ← Cerrar sesión
+            <AppIcon name="logout" /> Cerrar sesión
           </button>
         </div>
       </aside>
@@ -555,7 +543,7 @@ export default function DashboardEmpresas() {
                 }}>
                   <div style={{ textAlign: "center", marginBottom: "20px" }}>
                     <h2 style={{margin: 0, fontSize: "28px", fontWeight: "800", display: "inline-flex", alignItems: "center", gap: "12px"}}>
-                      ⚡ Haz Match con tu candidato ideal
+                      <AppIcon name="sparkles" size={20} /> Haz Match con tu candidato ideal
                     </h2>
                     <p style={{margin: "10px 0 0", color: "#94a3b8", fontSize: "15px"}}>
                       Selecciona tecnologías y, si lo necesitas, busca por nombre completo o parcial.
@@ -632,9 +620,9 @@ export default function DashboardEmpresas() {
  {/* PANTALLA DE CARGA Y RESULTADOS */}
                 {isMatching ? (
                   <div style={{ padding: "60px 20px", textAlign: "center", background: "white", borderRadius: "16px", border: "1px dashed #cbd5e1" }}>
-                    <div className="match-loader" style={{ fontSize: "60px", marginBottom: "15px" }}>⚡</div>
+                    <div className="match-loader match-loader--icon"><AppIcon name="sparkles" size={46} /></div>
                     <h2 style={{ color: "#1e293b", margin: "0 0 10px 0" }}>Buscando compatibilidad...</h2>
-                    <p style={{ color: "var(--muted)", margin: 0 }}>Nuestra IA está revisando los proyectos de los estudiantes de la UTEQ.</p>
+                    <p style={{ color: "var(--muted)", margin: 0 }}>SkillMatch está comparando tecnologías, proyectos y habilidades blandas.</p>
                   </div>
                 ) : (
                   <>
@@ -650,10 +638,17 @@ export default function DashboardEmpresas() {
                         listaRender.map((e) => (
                           <div className="estudiante-card" key={e.id_usuario || e.id}>
                             <div className="est-header">
-                              <div className="est-avatar">{initials(e.nombre)}</div>
+                              <div className="est-avatar" style={{ overflow: 'hidden' }}>
+                                {e.foto_perfil ? <img src={buildFileUrl(e.foto_perfil)} alt={e.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(ev) => { ev.currentTarget.style.display = 'none'; }} /> : initials(e.nombre)}
+                              </div>
                               <div>
                                 <div className="est-name">{e.nombre}</div>
                                 <div className="est-carrera">{e.carrera}</div>
+                                {busquedaAplicada && Number.isFinite(Number(e.match_score)) && (
+                                  <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 9px', borderRadius: 999, background: '#ecfdf5', color: '#047857', fontSize: 12, fontWeight: 900 }}>
+                                    {e.match_score}% Match
+                                  </div>
+                                )}
                                 <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 800, marginTop: 4 }}>
                                   Habilidades blandas: {e.habilidades_blandas?.puntaje_total ?? 'Sin test'}{e.habilidades_blandas?.puntaje_total ? '%' : ''}
                                 </div>
@@ -685,6 +680,13 @@ export default function DashboardEmpresas() {
                                 );
                               })}
                             </div>
+                            {busquedaAplicada && e.match_detalle && (
+                              <div style={{ margin: '12px 0', padding: 12, borderRadius: 12, background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 12, color: '#475569' }}>
+                                <b style={{ color: '#0f172a' }}>Por qué coincide:</b>{' '}
+                                {e.match_detalle.coincidencias?.length ? e.match_detalle.coincidencias.join(', ') : 'sin coincidencias técnicas'}.
+                                {e.match_detalle.faltantes?.length > 0 && <div style={{ marginTop: 4 }}><b>Brechas:</b> {e.match_detalle.faltantes.join(', ')}</div>}
+                              </div>
+                            )}
                             <div style={{display: "flex", gap: "8px"}}>
                               <button 
                                 className="btn btn-primary" 
@@ -698,7 +700,7 @@ export default function DashboardEmpresas() {
                         ))
                       ) : (
                         <div style={{padding: "50px", textAlign: "center", width: "100%", gridColumn: "1 / -1", background: "white", borderRadius: "12px", border: "1px dashed #cbd5e1"}}>
-                          <div style={{fontSize: "40px", marginBottom: "15px"}}>💔</div>
+                          <div className="empty-icon-minimal"><AppIcon name="target" size={38} /></div>
                           <h3 style={{color: "#334155", margin: "0 0 8px 0"}}>Sin Matches por ahora</h3>
                           <p style={{color: "var(--muted)", margin: 0}}>No encontramos estudiantes de la UTEQ con esa tecnología en sus proyectos.</p>
                           <button onClick={() => {setAppliedSkills([]); setSelectedSkills([]); setNombreBusqueda(''); setBusquedaAplicada(false);}} className="btn btn-ghost" style={{marginTop: "20px"}}>
@@ -744,7 +746,7 @@ export default function DashboardEmpresas() {
                      <div className="form-group"><label className="form-label">Nombre responsable</label><input className="form-input" value={perfilForm.nombre} onChange={e => setPerfilForm({...perfilForm, nombre: e.target.value})} /></div>
                      <div className="form-group"><label className="form-label">Apellido responsable</label><input className="form-input" value={perfilForm.apellido} onChange={e => setPerfilForm({...perfilForm, apellido: e.target.value})} /></div>
                      <div className="form-group"><label className="form-label">Teléfono</label><input className="form-input" value={perfilForm.telefono} onChange={e => setPerfilForm({...perfilForm, telefono: e.target.value})} /></div>
-                     <div className="form-group"><label className="form-label">Nueva contraseña</label><div style={{ position: "relative" }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} placeholder="Opcional" value={perfilForm.nueva_password} onChange={e => setPerfilForm({...perfilForm, nueva_password: e.target.value})} /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}>{showPerfilPass ? '🙈' : '👁️'}</button></div></div>
+                     <div className="form-group"><label className="form-label">Nueva contraseña</label><div style={{ position: "relative" }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} placeholder="Opcional" value={perfilForm.nueva_password} onChange={e => setPerfilForm({...perfilForm, nueva_password: e.target.value})} /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}><AppIcon name={showPerfilPass ? 'eyeOff' : 'eye'} size={18} /></button></div></div>
                    </div>
                    <div style={{ marginTop: "24px", display: "flex", gap: "12px" }}>
                      <button className="btn btn-primary" type="submit">Guardar cambios</button>
@@ -798,9 +800,9 @@ export default function DashboardEmpresas() {
                   <div className="form-group">
                     <label className="form-label">Estado de la vacante</label>
                     <select className="form-select" value={formVacante.estado} onChange={(e) => setFormVacante({...formVacante, estado: e.target.value})}>
-                      <option value="abierta">🟢 Activa</option>
-                      <option value="pausada">🟡 Pausada</option>
-                      <option value="cerrada">🔴 Cerrada</option>
+                      <option value="abierta">Activa</option>
+                      <option value="pausada">Pausada</option>
+                      <option value="cerrada">Cerrada</option>
                     </select>
                   </div>
                 )}

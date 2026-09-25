@@ -5,6 +5,7 @@ import '../CSS/LandingPage.css';
 import { API_BASE, buildFileUrl } from '../config/api';
 import BrandLogo from '../components/BrandLogo';
 import Reveal from '../components/Reveal';
+import AppIcon from '../components/AppIcon';
 
 const benefits = [
   {
@@ -31,10 +32,10 @@ const steps = [
 ];
 
 const roles = [
-  { icon: '🎓', title: 'Estudiantes', text: 'Construyen su portafolio, exploran vacantes y dan seguimiento a postulaciones.' },
-  { icon: '🏢', title: 'Empresas', text: 'Publican oportunidades, revisan perfiles y encuentran candidatos compatibles.' },
-  { icon: '🧑‍🏫', title: 'Profesores', text: 'Acompañan proyectos, evidencias y crecimiento académico de sus estudiantes.' },
-  { icon: '📊', title: 'Vinculación', text: 'Administra empresas, vacantes, candidatos y métricas desde un solo panel.' },
+  { icon: 'users', title: 'Estudiantes', text: 'Construyen su portafolio, exploran vacantes y dan seguimiento a postulaciones.' },
+  { icon: 'building', title: 'Empresas', text: 'Publican oportunidades, revisan perfiles y encuentran candidatos compatibles.' },
+  { icon: 'teacher', title: 'Profesores', text: 'Acompañan proyectos, evidencias y crecimiento académico de sus estudiantes.' },
+  { icon: 'report', title: 'Vinculación', text: 'Administra empresas, vacantes, candidatos y métricas desde un solo panel.' },
 ];
 
 const testimonials = [
@@ -102,6 +103,50 @@ function CheckIcon() {
       <path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+
+const inferVisualType = (item = {}) => {
+  const mime = String(item?.mime_type || '').toLowerCase();
+  const path = String(item?.ruta_archivo || item?.url || item || '').split('?')[0].toLowerCase();
+  if (item?.tipo === 'video' || mime.startsWith('video/') || /\.(mp4|webm|mov)$/.test(path)) return 'video';
+  return 'imagen';
+};
+
+const getProjectVisual = (project = {}) => {
+  if (project.img_principal) {
+    return { ruta_archivo: project.img_principal, tipo: inferVisualType(project.img_principal) };
+  }
+  const media = Array.isArray(project.media) ? project.media : [];
+  return media.find((item) => item?.ruta_archivo) || null;
+};
+
+function ProjectCardVisual({ project }) {
+  const [failed, setFailed] = useState(false);
+  const visual = getProjectVisual(project);
+  const src = visual?.ruta_archivo ? buildFileUrl(visual.ruta_archivo) : '';
+  const tipo = visual ? inferVisualType(visual) : '';
+
+  if (!src || failed) {
+    return <div className="project-placeholder"><AppIcon name="image" size={28} /><small>Multimedia no disponible</small></div>;
+  }
+
+  if (tipo === 'video') {
+    return (
+      <video
+        className="project-card__visual"
+        src={src}
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        onCanPlay={(event) => event.currentTarget.play().catch(() => {})}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return <img className="project-card__visual" src={src} alt={project.title || project.titulo || 'Proyecto SkillMatch'} loading="lazy" onError={() => setFailed(true)} />;
 }
 
 function StarRating({ rating = 0 }) {
@@ -467,15 +512,7 @@ export default function LandingPage() {
                 featuredProjects.map((project, index) => (
                   <Reveal className="project-card" key={project.id_proyecto || index} delay={(index % 3) * 80}>
                     <div className="project-card__media">
-                      {project.media?.length > 0 ? (
-                        String(project.media[0].mime_type || '').startsWith('video/') || project.media[0].tipo === 'video'
-                          ? <video src={buildFileUrl(project.media[0].ruta_archivo)} muted controls />
-                          : <img src={buildFileUrl(project.media[0].ruta_archivo)} alt={project.title || project.titulo} />
-                      ) : project.img_principal ? (
-                        <img src={buildFileUrl(project.img_principal)} alt={project.title || project.titulo} />
-                      ) : (
-                        <div className="project-placeholder"><span>{project.icon || '✦'}</span></div>
-                      )}
+                      <ProjectCardVisual project={project} />
                       <span className="verified-chip"><CheckIcon /> Proyecto verificado</span>
                     </div>
                     <div className="project-card__body">
@@ -514,7 +551,7 @@ export default function LandingPage() {
             <div className="roles-grid">
               {roles.map((role, index) => (
                 <Reveal className="role-card" key={role.title} delay={index * 80}>
-                  <span className="role-card__icon">{role.icon}</span><h3>{role.title}</h3><p>{role.text}</p><i><ArrowIcon /></i>
+                  <span className="role-card__icon"><AppIcon name={role.icon} size={24} /></span><h3>{role.title}</h3><p>{role.text}</p><i><ArrowIcon /></i>
                 </Reveal>
               ))}
             </div>
@@ -571,7 +608,7 @@ export default function LandingPage() {
           <div><strong>Legal</strong><button type="button" onClick={() => navigate('/terminos')}>Términos</button><button type="button" onClick={() => navigate('/privacidad')}>Privacidad</button><a href={whatsappUrl} target="_blank" rel="noreferrer">Contacto</a></div>
           <div className="footer-uteq"><span>En colaboración con</span><img src="/logos/uteq-logo.png" alt="UTEQ Universidad Líder" /></div>
         </div>
-        <div className="landing-footer__bottom">© 2026 SkillMatch · Querétaro, México</div>
+        <div className="landing-footer__bottom">© 2026 SkillMatch · Querétaro, México · V3.1</div>
       </footer>
 
       {showAuthModal && (

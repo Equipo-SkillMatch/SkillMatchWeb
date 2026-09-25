@@ -5,11 +5,30 @@ class Evidencia {
     id_proyecto,
     ruta_archivo,
     tipo = null,
+    nombre_original = null,
+    mime_type = null,
+    tamano_bytes = null,
+    hash_archivo = null,
   }) {
     const [result] = await db.query(
-      `INSERT INTO evidencias (id_proyecto, ruta_archivo, tipo)
-       VALUES (?, ?, ?)`,
-      [id_proyecto, ruta_archivo, tipo]
+      `INSERT INTO evidencias (
+        id_proyecto,
+        ruta_archivo,
+        tipo,
+        nombre_original,
+        mime_type,
+        tamano_bytes,
+        hash_archivo
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id_proyecto,
+        ruta_archivo,
+        tipo,
+        nombre_original,
+        mime_type,
+        tamano_bytes,
+        hash_archivo,
+      ]
     );
 
     return result.insertId;
@@ -30,6 +49,10 @@ class Evidencia {
         e.id_proyecto,
         e.ruta_archivo,
         e.tipo,
+        e.nombre_original,
+        e.mime_type,
+        e.tamano_bytes,
+        e.hash_archivo,
         e.fecha_subida,
         p.titulo AS proyecto_titulo,
         p.estado AS proyecto_estado
@@ -57,6 +80,17 @@ class Evidencia {
     );
 
     return rows[0];
+  }
+
+  static async findByProyecto(id_proyecto) {
+    const [rows] = await db.query(
+      `SELECT *
+       FROM evidencias
+       WHERE id_proyecto = ?
+       ORDER BY fecha_subida DESC, id_evidencia DESC`,
+      [id_proyecto]
+    );
+    return rows;
   }
 
   static async delete(id_evidencia) {

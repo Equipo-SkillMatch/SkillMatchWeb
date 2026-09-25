@@ -1,0 +1,28 @@
+SKILLMATCH V3.1 - DESPLIEGUE PASO A PASO
+
+1) NO subas backend/.env al repositorio.
+
+2) Ejecuta en Aiven:
+   backend/sql/11_media_evidencias_v3.sql
+
+3) Backend (Render u otro hosting):
+   - Root directory: backend
+   - Start: npm start
+   - Verifica DATABASE_URL, JWT_SECRET y FRONTEND_ORIGIN.
+   - Configura CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET.
+
+4) Frontend (Vercel u otro hosting):
+   - Root directory: frontend
+   - Build: npm run build
+   - Output: build
+   - REACT_APP_API_BASE_URL=https://TU-BACKEND/api
+   - Produccion debe apuntar a la rama/commit que acabas de subir.
+
+5) Prueba de version:
+   Backend: /api/public/version -> version 3.1.0-media-profile
+   Landing: footer -> V3.1
+   Admin/Vinculacion: sidebar -> SkillMatch V3.1
+
+6) Si faltan archivos ANTIGUOS y la URL responde 404:
+   El archivo físico ya no existe en el storage anterior. Hay que re-subirlo o restaurarlo desde respaldo.
+   V3 evita que vuelva a ocurrir con archivos NUEVOS si Cloudinary está configurado.

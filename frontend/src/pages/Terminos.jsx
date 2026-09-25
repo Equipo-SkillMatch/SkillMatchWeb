@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import AppIcon from '../components/AppIcon';
 
 export default function Terminos() {
   const navigate = useNavigate();
@@ -24,7 +25,7 @@ export default function Terminos() {
           {/* CARD: DESLINDE */}
           <div style={{ background: 'white', padding: '35px', borderRadius: '20px', boxShadow: '0 4px 10px rgba(0,0,0,0.03)' }}>
             <h2 style={{ color: '#232E56', fontSize: '18px', fontWeight: '800', textTransform: 'uppercase', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span>⚖️</span> Deslinde de Responsabilidad Legal
+              <span><AppIcon name="shield" size={20} /></span> Deslinde de Responsabilidad Legal
             </h2>
             <p style={{ fontSize: '15px', color: '#475569', lineHeight: '1.7' }}>
               Este documento establece los términos bajo los cuales se deslinda a <strong>SkillMatch</strong> y a la <strong>Universidad Tecnológica de Querétaro (UTEQ)</strong> de cualquier responsabilidad derivada del uso del software, conforme a la Ley General de Protección de Datos Personales y el Código Penal Federal.
@@ -44,7 +45,7 @@ export default function Terminos() {
 
           {/* CARD: SEGURIDAD TÉCNICA */}
           <div style={{ background: '#fff', border: '2px solid #232E56', padding: '35px', borderRadius: '20px' }}>
-            <h2 style={{ color: '#232E56', fontSize: '20px', fontWeight: '800', marginBottom: '20px' }}>🛡️ Lineamientos de Seguridad de la Información</h2>
+            <h2 style={{ color: '#232E56', fontSize: '20px', fontWeight: '800', marginBottom: '20px' }}><span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 8 }}><AppIcon name="shield" size={20} /></span>Lineamientos de Seguridad de la Información</h2>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px' }}>
               <div>

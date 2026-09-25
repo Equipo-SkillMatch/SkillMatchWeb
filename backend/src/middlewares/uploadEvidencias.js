@@ -20,6 +20,15 @@ if (hasCloudinaryConfig) {
 
 const allowedMimeTypes = [
   'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'application/zip',
+  'application/x-zip-compressed',
   'image/jpeg',
   'image/jpg',
   'image/png',
@@ -36,7 +45,7 @@ const uploadEvidencias = multer({
   limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!file || allowedMimeTypes.includes(file.mimetype)) return cb(null, true);
-    return cb(new Error('Formato no permitido. Usa PDF, JPG, PNG, WEBP, MP4, WEBM o MOV.'));
+    return cb(new Error('Formato no permitido. Usa PDF, Office, TXT, ZIP, JPG, PNG, WEBP, MP4, WEBM o MOV.'));
   },
 });
 

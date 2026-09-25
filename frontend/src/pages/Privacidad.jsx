@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import AppIcon from '../components/AppIcon';
 
 export default function Privacidad() {
   const navigate = useNavigate();
@@ -31,7 +32,7 @@ export default function Privacidad() {
             <h2 style={{ color: '#232E56', fontSize: '20px', marginBottom: '15px', borderLeft: '4px solid #244E7C', paddingLeft: '15px' }}>Datos Personales Recabados</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '10px' }}>
               <div style={{ background: '#f1f5f9', padding: '20px', borderRadius: '12px' }}>
-                <h3 style={{ fontSize: '16px', color: '#244E7C', marginBottom: '10px' }}>🎓 Estudiantes</h3>
+                <h3 style={{ fontSize: '16px', color: '#244E7C', marginBottom: '10px' }}><span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 7 }}><AppIcon name="graduation" size={18} /></span>Estudiantes</h3>
                 <ul style={{ paddingLeft: '20px', fontSize: '14px' }}>
                   <li>Nombre completo y Correo institucional.</li>
                   <li>Carrera y nivel académico.</li>
@@ -40,7 +41,7 @@ export default function Privacidad() {
                 </ul>
               </div>
               <div style={{ background: '#f1f5f9', padding: '20px', borderRadius: '12px' }}>
-                <h3 style={{ fontSize: '16px', color: '#244E7C', marginBottom: '10px' }}>🏢 Empresas</h3>
+                <h3 style={{ fontSize: '16px', color: '#244E7C', marginBottom: '10px' }}><span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 7 }}><AppIcon name="building" size={18} /></span>Empresas</h3>
                 <ul style={{ paddingLeft: '20px', fontSize: '14px' }}>
                   <li>Razón social y nombre comercial.</li>
                   <li>Datos del representante de contacto.</li>

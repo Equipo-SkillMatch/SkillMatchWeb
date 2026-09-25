@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import BrandLogo from '../components/BrandLogo';
 import '../CSS/VerProyecto.css';
 import { API_BASE, buildFileUrl } from '../config/api';
+import AppIcon from '../components/AppIcon';
 
 function SafeImage({ src, alt, className = '' }) {
   const [failed, setFailed] = useState(false);
@@ -10,7 +11,7 @@ function SafeImage({ src, alt, className = '' }) {
   if (!src || failed) {
     return (
       <div className={`project-detail-image-fallback ${className}`.trim()}>
-        <span>🖼️</span>
+        <span><AppIcon name="image" size={30} /></span>
         <strong>Imagen no disponible</strong>
         <small>El resto de la información del proyecto sigue disponible.</small>
       </div>
@@ -19,6 +20,26 @@ function SafeImage({ src, alt, className = '' }) {
 
   return <img className={className} src={src} alt={alt} onError={() => setFailed(true)} />;
 }
+
+
+const inferEvidenceMime = (item = {}) => {
+  if (item.mime_type) return String(item.mime_type).toLowerCase();
+  const source = String(item.ruta_archivo || item.nombre_original || '').split('?')[0].toLowerCase();
+  if (/\.(jpe?g)$/.test(source)) return 'image/jpeg';
+  if (/\.png$/.test(source)) return 'image/png';
+  if (/\.webp$/.test(source)) return 'image/webp';
+  if (/\.mp4$/.test(source)) return 'video/mp4';
+  if (/\.webm$/.test(source)) return 'video/webm';
+  if (/\.mov$/.test(source)) return 'video/quicktime';
+  if (/\.pdf$/.test(source)) return 'application/pdf';
+  return '';
+};
+
+const evidenceName = (item = {}) => {
+  if (item.nombre_original) return item.nombre_original;
+  const clean = String(item.ruta_archivo || '').split('?')[0];
+  return clean.split('/').pop() || 'Documento del proyecto';
+};
 
 const formatImpact = (value) => {
   if (value === 'L') return 'Local';
@@ -107,15 +128,18 @@ export default function VerProyecto() {
   };
 
   const imagenes = useMemo(
-    () => evidencias.filter((item) => String(item.mime_type || '').includes('image')),
-    [evidencias],
-  );
-  const pdfs = useMemo(
-    () => evidencias.filter((item) => String(item.mime_type || '').includes('pdf') || String(item.nombre_original || '').toLowerCase().endsWith('.pdf')),
+    () => evidencias.filter((item) => inferEvidenceMime(item).startsWith('image/')),
     [evidencias],
   );
   const videos = useMemo(
-    () => evidencias.filter((item) => String(item.mime_type || '').includes('video')),
+    () => evidencias.filter((item) => inferEvidenceMime(item).startsWith('video/')),
+    [evidencias],
+  );
+  const documentos = useMemo(
+    () => evidencias.filter((item) => {
+      const mime = inferEvidenceMime(item);
+      return !mime.startsWith('image/') && !mime.startsWith('video/');
+    }),
     [evidencias],
   );
 
@@ -195,7 +219,7 @@ export default function VerProyecto() {
 
         {colaboradores.length > 0 && (
           <section className="project-detail-collaborators">
-            <div><span>👥</span><strong>Equipo colaborador</strong></div>
+            <div><span><AppIcon name="users" size={18} /></span><strong>Equipo colaborador</strong></div>
             <div className="project-detail-collaborators__list">
               {colaboradores.map((colaborador, index) => (
                 <a key={`${colaborador.correo}-${index}`} href={`mailto:${colaborador.correo}`}>
@@ -209,8 +233,23 @@ export default function VerProyecto() {
 
         <div className="project-detail-layout">
           <div className="project-detail-main">
-            <section className="project-detail-media-card">
-              {mediaProyecto.length > 0 ? (
+            <section className="project-detail-media-card project-detail-cover-card">
+              {proyecto.img_principal ? (
+                <SafeImage src={buildFileUrl(proyecto.img_principal)} alt={`Portada de ${proyecto.titulo}`} className="project-detail-cover" />
+              ) : (
+                <div className="project-detail-image-fallback">
+                  <span>▧</span>
+                  <strong>Portada no disponible</strong>
+                  <small>La información y las evidencias del proyecto siguen disponibles.</small>
+                </div>
+              )}
+              <div className="project-detail-cover-label">Portada del proyecto</div>
+            </section>
+
+            {mediaProyecto.length > 0 && (
+              <section className="project-detail-card project-detail-gallery-card">
+                <div className="project-detail-section-title"><span>GAL</span><div><small>MULTIMEDIA</small><h2>Galería del proyecto</h2></div></div>
+                <p className="project-detail-gallery-copy">Imágenes y videos complementarios cargados por el autor.</p>
                 <div className="project-detail-carousel">
                   {mediaProyecto.map((media) => (
                     <div className="project-detail-slide" key={media.id_media || media.ruta_archivo}>
@@ -220,29 +259,21 @@ export default function VerProyecto() {
                           Tu navegador no soporta videos.
                         </video>
                       ) : (
-                        <SafeImage src={buildFileUrl(media.ruta_archivo)} alt={proyecto.titulo} />
+                        <SafeImage src={buildFileUrl(media.ruta_archivo)} alt={`Galería de ${proyecto.titulo}`} />
                       )}
                     </div>
                   ))}
                 </div>
-              ) : proyecto.img_principal ? (
-                <SafeImage src={buildFileUrl(proyecto.img_principal)} alt={proyecto.titulo} />
-              ) : (
-                <div className="project-detail-image-fallback">
-                  <span>💻</span>
-                  <strong>Proyecto digital</strong>
-                  <small>No se registró una imagen principal.</small>
-                </div>
-              )}
-              {mediaProyecto.length > 1 && <div className="project-detail-swipe-note">Desliza para ver {mediaProyecto.length} archivos</div>}
-            </section>
+                {mediaProyecto.length > 1 && <div className="project-detail-swipe-note">Desliza para ver {mediaProyecto.length} archivos</div>}
+              </section>
+            )}
 
             <section className="project-detail-card">
               <div className="project-detail-section-title"><span>01</span><div><small>CONTEXTO</small><h2>Descripción del proyecto</h2></div></div>
               <p className="project-detail-description">{proyecto.descripcion || 'No se agregó una descripción.'}</p>
               <div className="project-detail-two-columns">
-                <article><span>🎯</span><div><h3>Objetivo</h3><p>{proyecto.objetivo || 'No especificado'}</p></div></article>
-                <article><span>🛠️</span><div><h3>Actividades</h3><p>{proyecto.actividades || 'No especificadas'}</p></div></article>
+                <article><span><AppIcon name="target" size={20} /></span><div><h3>Objetivo</h3><p>{proyecto.objetivo || 'No especificado'}</p></div></article>
+                <article><span><AppIcon name="clipboard" size={20} /></span><div><h3>Actividades</h3><p>{proyecto.actividades || 'No especificadas'}</p></div></article>
               </div>
             </section>
 
@@ -262,13 +293,13 @@ export default function VerProyecto() {
                 </div>
               )}
 
-              {pdfs.length > 0 && (
+              {documentos.length > 0 && (
                 <div className="project-detail-evidence-block">
                   <h3>Documentación</h3>
                   <div className="project-detail-file-list">
-                    {pdfs.map((pdf) => (
+                    {documentos.map((pdf) => (
                       <a key={pdf.id_evidencia} href={buildFileUrl(pdf.ruta_archivo)} target="_blank" rel="noreferrer">
-                        <span>PDF</span><div><strong>{pdf.nombre_original || 'Documento del proyecto'}</strong><small>Abrir en una pestaña nueva</small></div><b>↗</b>
+                        <span>{inferEvidenceMime(pdf) === 'application/pdf' ? 'PDF' : 'DOC'}</span><div><strong>{evidenceName(pdf)}</strong><small>Abrir documentación en una pestaña nueva</small></div><b>↗</b>
                       </a>
                     ))}
                   </div>
@@ -282,7 +313,7 @@ export default function VerProyecto() {
                     {videos.map((video) => (
                       <article key={video.id_evidencia}>
                         <video controls preload="metadata">
-                          <source src={buildFileUrl(video.ruta_archivo)} type={video.mime_type || 'video/mp4'} />
+                          <source src={buildFileUrl(video.ruta_archivo)} type={inferEvidenceMime(video) || 'video/mp4'} />
                           Tu navegador no soporta videos.
                         </video>
                         <strong>{video.nombre_original || 'Video del proyecto'}</strong>
@@ -293,7 +324,7 @@ export default function VerProyecto() {
               )}
 
               {evidencias.length === 0 && (
-                <div className="project-detail-empty"><span>📁</span><div><strong>Sin evidencias publicadas</strong><p>El equipo todavía no ha agregado archivos entregables.</p></div></div>
+                <div className="project-detail-empty"><span><AppIcon name="folder" size={24} /></span><div><strong>Sin evidencias publicadas</strong><p>El equipo todavía no ha agregado archivos entregables.</p></div></div>
               )}
             </section>
 
@@ -320,7 +351,7 @@ export default function VerProyecto() {
                 </form>
               ) : (
                 <div className="project-detail-login-prompt">
-                  <div><span>💬</span><div><strong>Participa en la conversación</strong><p>Inicia sesión para calificar y dejar un comentario.</p></div></div>
+                  <div><span><AppIcon name="bot" size={20} /></span><div><strong>Participa en la conversación</strong><p>Inicia sesión para calificar y dejar un comentario.</p></div></div>
                   <button type="button" onClick={() => navigate('/login')}>Iniciar sesión</button>
                 </div>
               )}
@@ -336,7 +367,7 @@ export default function VerProyecto() {
                     <p>{comentario.comentario || 'El usuario dejó una calificación sin comentario de texto.'}</p>
                   </article>
                 )) : (
-                  <div className="project-detail-empty"><span>📭</span><div><strong>Aún no hay reseñas</strong><p>Sé la primera persona en compartir una opinión.</p></div></div>
+                  <div className="project-detail-empty"><span><AppIcon name="file" size={24} /></span><div><strong>Aún no hay reseñas</strong><p>Sé la primera persona en compartir una opinión.</p></div></div>
                 )}
               </div>
             </section>

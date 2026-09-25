@@ -6,6 +6,7 @@ import autoTable from 'jspdf-autotable';
 import '../CSS/DashboardProfesores.css'; 
 import { API_BASE, buildFileUrl } from '../config/api';
 import DashboardInsights from '../components/DashboardInsights';
+import AppIcon from '../components/AppIcon';
 
 const initials = (name) =>
   name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || 'PR';
@@ -50,7 +51,7 @@ export default function DashboardProfesores() {
   const [evidencias, setEvidencias] = useState([]);
   const [horarios, setHorarios] = useState([]);
   const [perfilProfesor, setPerfilProfesor] = useState(null);
-  const [perfilForm, setPerfilForm] = useState({ nombre: '', apellido: '', telefono: '', departamento: '', asignaturas: '', nueva_password: '' });
+  const [perfilForm, setPerfilForm] = useState({ nombre: '', apellido: '', telefono: '', departamento: '', asignaturas: '', grado_academico: '', especialidad: '', biografia: '', linkedin: '', orcid: '', horario_atencion: '', mentorias: false, nueva_password: '' });
   const [perfilFoto, setPerfilFoto] = useState(null);
   const [showPerfilPass, setShowPerfilPass] = useState(false);
   const [horarioForm, setHorarioForm] = useState({ titulo: '', descripcion: '' });
@@ -194,6 +195,7 @@ export default function DashboardProfesores() {
           telefono: data.usuario?.telefono || '',
           departamento: data.profesor?.departamento || '',
           asignaturas: data.profesor?.asignaturas || '',
+          grado_academico: data.profesor?.grado_academico || '', especialidad: data.profesor?.especialidad || '', biografia: data.profesor?.biografia || '', linkedin: data.profesor?.linkedin || '', orcid: data.profesor?.orcid || '', horario_atencion: data.profesor?.horario_atencion || '', mentorias: Boolean(data.profesor?.mentorias),
           nueva_password: ''
         });
       }
@@ -413,28 +415,28 @@ export default function DashboardProfesores() {
         <div className="nav-wrap">
           <div className="nav-group-label">Principal</div>
           <div className={`nav-item ${view === 'dashboard' ? 'active' : ''}`} onClick={() => handleNavClick('dashboard')}>
-            <span className="icon">▦</span> Dashboard
+            <span className="icon"><AppIcon name="dashboard" /></span> Dashboard
           </div>
           
           <div className={`nav-item ${view === 'horarios' ? 'active' : ''}`} onClick={() => handleNavClick('horarios')}>
-            <span className="icon">📅</span> Mi horario
+            <span className="icon"><AppIcon name="calendar" /></span> Mi horario
           </div>
 
           <div className={`nav-item ${view === 'proyectos' ? 'active' : ''}`} onClick={() => handleNavClick('proyectos')}>
-            <span className="icon">📁</span> Mis proyectos
+            <span className="icon"><AppIcon name="folder" /></span> Mis proyectos
           </div>
           <div className={`nav-item ${view === 'documentos' ? 'active' : ''}`} onClick={() => handleNavClick('documentos')}>
-            <span className="icon">📄</span> Documentos
+            <span className="icon"><AppIcon name="file" /></span> Documentos
           </div>
 
           <div className="nav-group-label" style={{ marginTop: '8px' }}>Cuenta</div>
           <div className={`nav-item ${view === 'perfil' ? 'active' : ''}`} onClick={() => handleNavClick('perfil')}>
-            <span className="icon">👤</span> Mi perfil
+            <span className="icon"><AppIcon name="user" /></span> Mi perfil
           </div>
         </div>
           
         <div className="sidebar-bottom">
-          <button className="sidebar-logout-btn" onClick={cerrarSesion}>← Cerrar sesión</button>
+          <button className="sidebar-logout-btn" onClick={cerrarSesion}><AppIcon name="logout" /> Cerrar sesión</button>
         </div>
       </aside>
 
@@ -535,7 +537,7 @@ export default function DashboardProfesores() {
                 {proyectos.length === 0 ? (
                   <div className="table-wrap">
                     <div className="empty-state">
-                      <div className="empty-icon">📁</div>
+                      <div className="empty-icon"><AppIcon name="folder" size={32} /></div>
                       <div className="empty-title">No tienes proyectos aún</div>
                       <div className="empty-sub">Registra tu primer proyecto como profesor</div>
                     </div>
@@ -773,7 +775,14 @@ export default function DashboardProfesores() {
                   <div className="form-group"><label className="form-label">Teléfono</label><input className="form-input" value={perfilForm.telefono} onChange={e => setPerfilForm({ ...perfilForm, telefono: e.target.value })} /></div>
                   <div className="form-group"><label className="form-label">Departamento</label><input className="form-input" value={perfilForm.departamento} onChange={e => setPerfilForm({ ...perfilForm, departamento: e.target.value })} /></div>
                   <div className="form-group"><label className="form-label">Asignaturas</label><input className="form-input" value={perfilForm.asignaturas} onChange={e => setPerfilForm({ ...perfilForm, asignaturas: e.target.value })} /></div>
-                  <div className="form-group"><label className="form-label">Nueva contraseña</label><div style={{ position: 'relative' }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} placeholder="Opcional" value={perfilForm.nueva_password} onChange={e => setPerfilForm({ ...perfilForm, nueva_password: e.target.value })} /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}>{showPerfilPass ? '🙈' : '👁️'}</button></div></div>
+                  <div className="form-group"><label className="form-label">Grado académico</label><input className="form-input" value={perfilForm.grado_academico} onChange={e => setPerfilForm({ ...perfilForm, grado_academico: e.target.value })} placeholder="Ej. Maestría en Tecnologías de la Información" /></div>
+                  <div className="form-group"><label className="form-label">Especialidad / áreas de experiencia</label><input className="form-input" value={perfilForm.especialidad} onChange={e => setPerfilForm({ ...perfilForm, especialidad: e.target.value })} /></div>
+                  <div className="form-group"><label className="form-label">Biografía profesional</label><textarea className="form-input" style={{ minHeight: 100 }} value={perfilForm.biografia} onChange={e => setPerfilForm({ ...perfilForm, biografia: e.target.value })} /></div>
+                  <div className="form-group"><label className="form-label">LinkedIn</label><input className="form-input" value={perfilForm.linkedin} onChange={e => setPerfilForm({ ...perfilForm, linkedin: e.target.value })} /></div>
+                  <div className="form-group"><label className="form-label">ORCID</label><input className="form-input" value={perfilForm.orcid} onChange={e => setPerfilForm({ ...perfilForm, orcid: e.target.value })} /></div>
+                  <div className="form-group"><label className="form-label">Horario de atención</label><input className="form-input" value={perfilForm.horario_atencion} onChange={e => setPerfilForm({ ...perfilForm, horario_atencion: e.target.value })} placeholder="Ej. Martes y jueves 13:00–15:00" /></div>
+                  <label style={{ display:'flex', gap:8, alignItems:'center', margin:'8px 0 16px' }}><input type="checkbox" checked={perfilForm.mentorias} onChange={e => setPerfilForm({ ...perfilForm, mentorias: e.target.checked })} /> Disponible para mentorías</label>
+                  <div className="form-group"><label className="form-label">Nueva contraseña</label><div style={{ position: 'relative' }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} placeholder="Opcional" value={perfilForm.nueva_password} onChange={e => setPerfilForm({ ...perfilForm, nueva_password: e.target.value })} /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}><AppIcon name={showPerfilPass ? 'eyeOff' : 'eye'} size={18} /></button></div></div>
                 </div>
                 <button className="btn btn-primary" type="submit" style={{ marginTop: 16 }}>Guardar cambios</button>
               </form>

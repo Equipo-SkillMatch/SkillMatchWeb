@@ -3,9 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import '../CSS/DashboardVinculacion.css';
 import { API_BASE, buildFileUrl } from '../config/api';
 import DashboardInsights from '../components/DashboardInsights';
+import AppIcon from '../components/AppIcon';
 
 const initials = (name) => name ? name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'SM';
 const formatFecha = (fecha) => fecha ? new Date(fecha).toLocaleDateString('es-MX') : '—';
+
+const inferAssetType = (item = {}) => {
+  const mime = String(item?.mime_type || '').toLowerCase();
+  const ruta = String(item?.ruta_archivo || item || '').split('?')[0].toLowerCase();
+  if (item?.tipo === 'video' || mime.startsWith('video/') || /\.(mp4|webm|mov)$/.test(ruta)) return 'video';
+  if (mime.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/.test(ruta)) return 'imagen';
+  if (mime === 'application/pdf' || /\.pdf$/.test(ruta)) return 'documento';
+  return 'archivo';
+};
+
+const archivoNombre = (item = {}) => item.nombre_original || String(item.ruta_archivo || '').split('?')[0].split('/').pop() || 'Archivo';
 
 const estadoEmpresaLabel = {
   pendiente: 'Pendiente',
@@ -15,23 +27,23 @@ const estadoEmpresaLabel = {
 };
 
 const menuAdmin = [
-  { key: 'dashboard', label: 'Dashboard', icon: '▦' },
-  { key: 'alumnos', label: 'Estudiantes', icon: '🎓' },
-  { key: 'profesores', label: 'Profesores', icon: '👨‍🏫' },
-  { key: 'proyectos', label: 'Proyectos', icon: '📁' },
-  { key: 'empresas', label: 'Empresas', icon: '🏢' },
-  { key: 'chatbot', label: 'Chatbot', icon: '🤖' },
-  { key: 'perfil', label: 'Mi perfil', icon: '👤' },
+  { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+  { key: 'alumnos', label: 'Estudiantes', icon: 'users' },
+  { key: 'profesores', label: 'Profesores', icon: 'teacher' },
+  { key: 'proyectos', label: 'Proyectos', icon: 'folder' },
+  { key: 'empresas', label: 'Empresas', icon: 'building' },
+  { key: 'chatbot', label: 'Chatbot', icon: 'bot' },
+  { key: 'perfil', label: 'Mi perfil', icon: 'user' },
 ];
 
 const menuVinculacion = [
-  { key: 'dashboard', label: 'Dashboard', icon: '▦' },
-  { key: 'empresas', label: 'Empresas', icon: '🏢' },
-  { key: 'vacantes', label: 'Vacantes', icon: '💼' },
-  { key: 'postulaciones', label: 'Postulaciones', icon: '🧾' },
-  { key: 'candidatos', label: 'Candidatos', icon: '🎯' },
-  { key: 'reportes', label: 'Reportes', icon: '📊' },
-  { key: 'perfil', label: 'Mi perfil', icon: '👤' },
+  { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+  { key: 'empresas', label: 'Empresas', icon: 'building' },
+  { key: 'vacantes', label: 'Vacantes', icon: 'briefcase' },
+  { key: 'postulaciones', label: 'Postulaciones', icon: 'clipboard' },
+  { key: 'candidatos', label: 'Candidatos', icon: 'target' },
+  { key: 'reportes', label: 'Reportes', icon: 'report' },
+  { key: 'perfil', label: 'Mi perfil', icon: 'user' },
 ];
 
 export default function DashboardVinculacion() {
@@ -54,6 +66,10 @@ export default function DashboardVinculacion() {
   const [postulaciones, setPostulaciones] = useState([]);
   const [candidatos, setCandidatos] = useState([]);
   const [reportes, setReportes] = useState({});
+  const [listSearch, setListSearch] = useState('');
+  const [listStatus, setListStatus] = useState('todos');
+  const [listSecondary, setListSecondary] = useState('todos');
+  const [listSort, setListSort] = useState('recientes');
 
   const [detalle, setDetalle] = useState(null);
   const [detalleTipo, setDetalleTipo] = useState('');
@@ -65,7 +81,7 @@ export default function DashboardVinculacion() {
   const [editingBotId, setEditingBotId] = useState(null);
 
   const [perfil, setPerfil] = useState(null);
-  const [perfilForm, setPerfilForm] = useState({ nombre: '', apellido: '', telefono: '', nueva_password: '', confirmar_password: '' });
+  const [perfilForm, setPerfilForm] = useState({ nombre: '', apellido: '', telefono: '', cargo_institucional: '', area_institucional: '', extension: '', oficina: '', bio_profesional: '', nueva_password: '', confirmar_password: '' });
   const [perfilFoto, setPerfilFoto] = useState(null);
   const [showPerfilPass, setShowPerfilPass] = useState(false);
 
@@ -82,6 +98,10 @@ export default function DashboardVinculacion() {
   const handleNavClick = (vista) => {
     setView(vista);
     setIsMobileMenuOpen(false);
+    setListSearch('');
+    setListStatus('todos');
+    setListSecondary('todos');
+    setListSort('recientes');
     if (vista === 'chatbot') cargarChatbot();
     if (vista === 'perfil') cargarPerfil();
   };
@@ -273,6 +293,11 @@ export default function DashboardVinculacion() {
         nombre: json.usuario.nombre || '',
         apellido: json.usuario.apellido || '',
         telefono: json.usuario.telefono || '',
+        cargo_institucional: json.usuario.cargo_institucional || '',
+        area_institucional: json.usuario.area_institucional || '',
+        extension: json.usuario.extension || '',
+        oficina: json.usuario.oficina || '',
+        bio_profesional: json.usuario.bio_profesional || '',
         nueva_password: '',
         confirmar_password: ''
       });
@@ -297,6 +322,34 @@ export default function DashboardVinculacion() {
     cargarPerfil();
   };
 
+  const filtrarLista = (items = []) => {
+    const filtered = items.filter((item) => {
+      const texto = Object.values(item || {}).filter((v) => ['string','number'].includes(typeof v)).join(' ').toLowerCase();
+      const coincideTexto = !listSearch.trim() || texto.includes(listSearch.trim().toLowerCase());
+      const estado = String(item?.estado || item?.estado_usuario || '').toLowerCase();
+      const coincideEstado = listStatus === 'todos' || estado === listStatus;
+
+      let coincideSecundario = true;
+      if (listSecondary !== 'todos') {
+        if (view === 'proyectos') coincideSecundario = String(item?.tipo_autor || '').toLowerCase() === listSecondary;
+        if (view === 'alumnos') coincideSecundario = String(item?.estado_academico || '').toLowerCase() === listSecondary;
+        if (view === 'empresas') coincideSecundario = String(item?.sector || '').toLowerCase().includes(listSecondary);
+      }
+      return coincideTexto && coincideEstado && coincideSecundario;
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (listSort === 'nombre') {
+        const aa = String(a?.titulo || a?.nombre || a?.razon_social || a?.alumno || '').toLowerCase();
+        const bb = String(b?.titulo || b?.nombre || b?.razon_social || b?.alumno || '').toLowerCase();
+        return aa.localeCompare(bb, 'es');
+      }
+      const dateA = new Date(a?.fecha || a?.fecha_registro || a?.fecha_postulacion || 0).getTime() || 0;
+      const dateB = new Date(b?.fecha || b?.fecha_registro || b?.fecha_postulacion || 0).getTime() || 0;
+      return listSort === 'antiguos' ? dateA - dateB : dateB - dateA;
+    });
+  };
+
   const empresasPendientes = useMemo(() => empresas.filter(e => e.estado === 'pendiente'), [empresas]);
 
   if (loading) return <div className="loading-screen">Cargando datos del sistema...</div>;
@@ -314,13 +367,14 @@ export default function DashboardVinculacion() {
           <div className="nav-group-label">Módulos</div>
           {menu.map((item) => (
             <div key={item.key} className={`nav-item ${view === item.key ? 'active' : ''}`} onClick={() => handleNavClick(item.key)}>
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon"><AppIcon name={item.icon} /></span>
               {item.label}
             </div>
           ))}
           <div className="nav-item" style={{ marginTop: 12, color: '#fca5a5' }} onClick={() => { localStorage.clear(); navigate('/'); }}>
-            <span className="nav-icon">←</span> Cerrar sesión
+            <span className="nav-icon"><AppIcon name="logout" /></span> Cerrar sesión
           </div>
+          <div className="sidebar-build">SkillMatch V3.1</div>
         </div>
         <div className="sidebar-user">
           <div className="user-avatar">{initials(`${user.nombre || ''} ${user.apellido || ''}`)}</div>
@@ -343,45 +397,72 @@ export default function DashboardVinculacion() {
         <div className="content">
           {view === 'dashboard' && <DashboardResumen isAdmin={isAdmin} stats={stats} empresasPendientes={empresasPendientes} abrirDetalle={abrirDetalle} handleNavClick={handleNavClick} />}
 
+          {['empresas','alumnos','profesores','proyectos','vacantes','postulaciones','candidatos'].includes(view) && (
+            <div className="list-filterbar">
+              <div className="list-filterbar__search"><AppIcon name="search" size={16} /><input value={listSearch} onChange={e => setListSearch(e.target.value)} placeholder="Buscar por nombre, correo, carrera, empresa o palabra clave..." /></div>
+              <select value={listStatus} onChange={e => setListStatus(e.target.value)} aria-label="Filtrar por estado">
+                <option value="todos">Todos los estados</option>
+                <option value="activo">Activo</option><option value="inactivo">Inactivo</option>
+                <option value="pendiente">Pendiente</option><option value="habilitada">Habilitada</option><option value="rechazada">Rechazada</option>
+                <option value="abierta">Abierta</option><option value="pausada">Pausada</option><option value="cerrada">Cerrada</option>
+                <option value="aceptada">Aceptada</option><option value="revisada">Revisada</option>
+                <option value="en progreso">En progreso</option><option value="completado">Completado</option>
+              </select>
+              {view === 'proyectos' && <select value={listSecondary} onChange={e => setListSecondary(e.target.value)} aria-label="Filtrar proyectos por autor"><option value="todos">Todos los autores</option><option value="estudiante">Estudiantes</option><option value="profesor">Profesores</option></select>}
+              {view === 'alumnos' && <select value={listSecondary} onChange={e => setListSecondary(e.target.value)} aria-label="Filtrar por estado académico"><option value="todos">Situación académica</option><option value="activo">Activo</option><option value="egresado">Egresado</option><option value="baja">Baja</option></select>}
+              <select value={listSort} onChange={e => setListSort(e.target.value)} aria-label="Ordenar resultados"><option value="recientes">Más recientes</option><option value="antiguos">Más antiguos</option><option value="nombre">A-Z</option></select>
+              {(listSearch || listStatus !== 'todos' || listSecondary !== 'todos' || listSort !== 'recientes') && <button className="btn btn-ghost" onClick={() => { setListSearch(''); setListStatus('todos'); setListSecondary('todos'); setListSort('recientes'); }}>Limpiar</button>}
+            </div>
+          )}
+
           {view === 'empresas' && (
             <Table title={isAdmin ? 'Empresas registradas (solo consulta)' : 'Empresas registradas y validación'} empty="No hay empresas registradas" headers={['Empresa','Contacto','Estado','Vacantes','Acciones']}>
-              {empresas.map(e => <div className="table-row" key={e.id} style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr' }}><div><b>{e.nombre}</b><div style={{ fontSize: 12, color: '#64748b' }}>{e.correo}</div></div><div>{e.contacto || '—'}</div><div><span className={`status ${e.estado}`}>{estadoEmpresaLabel[e.estado] || e.estado}</span></div><div>{e.total_vacantes || 0}</div><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><button className="btn btn-ghost" onClick={() => abrirDetalle('empresa', e.id)}>Ver detalle</button>{isAdmin && <button className={e.estado_usuario === 'activo' ? 'btn btn-danger' : 'btn btn-primary'} onClick={() => cambiarEstadoUsuario(e.id, e.estado_usuario === 'activo' ? 'inactivo' : 'activo')}>{e.estado_usuario === 'activo' ? 'Suspender' : 'Habilitar'}</button>}</div></div>)}
+              {filtrarLista(empresas).map(e => <div className="table-row" key={e.id} style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr' }}><div><b>{e.nombre}</b><div style={{ fontSize: 12, color: '#64748b' }}>{e.correo}</div></div><div>{e.contacto || '—'}</div><div><span className={`status ${e.estado}`}>{estadoEmpresaLabel[e.estado] || e.estado}</span></div><div>{e.total_vacantes || 0}</div><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><button className="btn btn-ghost" onClick={() => abrirDetalle('empresa', e.id)}>Ver detalle</button>{isAdmin && <button className={e.estado_usuario === 'activo' ? 'btn btn-danger' : 'btn btn-primary'} onClick={() => cambiarEstadoUsuario(e.id, e.estado_usuario === 'activo' ? 'inactivo' : 'activo')}>{e.estado_usuario === 'activo' ? 'Suspender' : 'Habilitar'}</button>}</div></div>)}
             </Table>
           )}
 
           {isAdmin && view === 'alumnos' && (
             <Table title="Estudiantes registrados" empty="No hay estudiantes registrados" headers={['Estudiante','Carrera','Cuatrimestre','Proyectos','Acciones']}>
-              {alumnos.map(a => <div className="table-row" key={a.id} style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{a.foto_perfil ? <img alt="perfil" src={buildFileUrl(a.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(a.nombre)}</div>}<div><b>{a.nombre}</b><div style={{ fontSize: 12, color: '#64748b' }}>{a.matricula}</div></div></div><div>{a.carrera}</div><div>{a.semestre || '—'}</div><div>{a.total_proyectos || 0}</div><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><button className="btn btn-ghost" onClick={() => abrirDetalle('alumno', a.id)}>Ver detalle</button><button className={a.estado_usuario === 'activo' ? 'btn btn-danger' : 'btn btn-primary'} onClick={() => cambiarEstadoUsuario(a.id, a.estado_usuario === 'activo' ? 'inactivo' : 'activo')}>{a.estado_usuario === 'activo' ? 'Suspender' : 'Habilitar'}</button></div></div>)}
+              {filtrarLista(alumnos).map(a => <div className="table-row" key={a.id} style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{a.foto_perfil ? <img alt="perfil" src={buildFileUrl(a.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(a.nombre)}</div>}<div><b>{a.nombre}</b><div style={{ fontSize: 12, color: '#64748b' }}>{a.matricula}</div></div></div><div>{a.carrera}</div><div>{a.semestre || '—'}</div><div>{a.total_proyectos || 0}</div><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><button className="btn btn-ghost" onClick={() => abrirDetalle('alumno', a.id)}>Ver detalle</button><button className={a.estado_usuario === 'activo' ? 'btn btn-danger' : 'btn btn-primary'} onClick={() => cambiarEstadoUsuario(a.id, a.estado_usuario === 'activo' ? 'inactivo' : 'activo')}>{a.estado_usuario === 'activo' ? 'Suspender' : 'Habilitar'}</button></div></div>)}
             </Table>
           )}
 
           {isAdmin && view === 'profesores' && (
             <Table title="Profesores registrados" empty="No hay profesores registrados" headers={['Profesor','Departamento','Asignaturas','Horarios','Acciones']}>
-              {profesores.map(p => <div className="table-row" key={p.id} style={{ gridTemplateColumns: '2fr 1.4fr 2fr .8fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{p.foto_perfil ? <img alt="perfil" src={buildFileUrl(p.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(p.nombre)}</div>}<div><b>{p.nombre}</b><div style={{ fontSize: 12, color: '#64748b' }}>{p.correo}</div></div></div><div>{p.departamento || '—'}</div><div>{p.asignaturas || '—'}</div><div>{p.total_horarios || 0}</div><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><button className="btn btn-ghost" onClick={() => abrirDetalle('profesor', p.id)}>Ver detalle</button><button className={p.estado_usuario === 'activo' ? 'btn btn-danger' : 'btn btn-primary'} onClick={() => cambiarEstadoUsuario(p.id, p.estado_usuario === 'activo' ? 'inactivo' : 'activo')}>{p.estado_usuario === 'activo' ? 'Suspender' : 'Habilitar'}</button></div></div>)}
+              {filtrarLista(profesores).map(p => <div className="table-row" key={p.id} style={{ gridTemplateColumns: '2fr 1.4fr 2fr .8fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{p.foto_perfil ? <img alt="perfil" src={buildFileUrl(p.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(p.nombre)}</div>}<div><b>{p.nombre}</b><div style={{ fontSize: 12, color: '#64748b' }}>{p.correo}</div></div></div><div>{p.departamento || '—'}</div><div>{p.asignaturas || '—'}</div><div>{p.total_horarios || 0}</div><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><button className="btn btn-ghost" onClick={() => abrirDetalle('profesor', p.id)}>Ver detalle</button><button className={p.estado_usuario === 'activo' ? 'btn btn-danger' : 'btn btn-primary'} onClick={() => cambiarEstadoUsuario(p.id, p.estado_usuario === 'activo' ? 'inactivo' : 'activo')}>{p.estado_usuario === 'activo' ? 'Suspender' : 'Habilitar'}</button></div></div>)}
             </Table>
           )}
 
           {isAdmin && view === 'proyectos' && (
-            <Table title="Proyectos" empty="No hay proyectos" headers={['Proyecto','Autor','Tipo','Fecha','Acciones']}>
-              {proyectos.map(p => <div className="table-row" key={p.id} style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr' }}><div><b>{p.titulo}</b><div style={{ fontSize: 12, color: '#64748b' }}>{p.tecnologias || 'Sin tecnologías registradas'}</div></div><div>{p.autor || '—'}</div><div>{p.tipo_autor || 'Estudiante'}</div><div>{formatFecha(p.fecha)}</div><div><button className="btn btn-ghost" onClick={() => abrirDetalle('proyecto', p.id)}>Ver detalle</button></div></div>)}
+            <Table title="Proyectos" empty="No hay proyectos" headers={['Proyecto','Autor','Estado','Fecha','Acciones']}>
+              {filtrarLista(proyectos).map(p => {
+                const visual = p.img_principal || p.media?.find(m => inferAssetType(m) === 'imagen')?.ruta_archivo || p.media?.[0]?.ruta_archivo;
+                return <div className="table-row" key={p.id} style={{ gridTemplateColumns: '2.2fr 1.4fr .9fr 1fr 1fr' }}>
+                  <div className="project-admin-cell">
+                    <div className="project-admin-thumb">{visual ? <img src={buildFileUrl(visual)} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <AppIcon name="image" size={19} />}</div>
+                    <div><b>{p.titulo}</b><div style={{ fontSize: 12, color: '#64748b' }}>{p.tipo_autor || 'Estudiante'} · {p.tecnologias || 'Sin tecnologías registradas'}</div></div>
+                  </div>
+                  <div>{p.autor || '—'}</div><div><span className="status">{p.estado || '—'}</span></div><div>{formatFecha(p.fecha)}</div><div><button className="btn btn-ghost" onClick={() => abrirDetalle('proyecto', p.id)}>Ver detalle</button></div>
+                </div>;
+              })}
             </Table>
           )}
 
           {isVinculacion && view === 'vacantes' && (
             <Table title="Vacantes de empresas" empty="No hay vacantes" headers={['Vacante','Empresa','Estado','Postulaciones','Acciones']}>
-              {vacantes.map(v => <div className="table-row" key={v.id} style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr' }}><div><b>{v.titulo}</b><div style={{ fontSize: 12, color: '#64748b' }}>{v.categoria || 'Sin categoría'}</div></div><div>{v.empresa}</div><div>{v.estado}</div><div>{v.total_postulaciones || 0}</div><div><button className="btn btn-ghost" onClick={() => abrirDetalle('vacante', v.id)}>Ver detalle</button></div></div>)}
+              {filtrarLista(vacantes).map(v => <div className="table-row" key={v.id} style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr' }}><div><b>{v.titulo}</b><div style={{ fontSize: 12, color: '#64748b' }}>{v.categoria || 'Sin categoría'}</div></div><div>{v.empresa}</div><div>{v.estado}</div><div>{v.total_postulaciones || 0}</div><div><button className="btn btn-ghost" onClick={() => abrirDetalle('vacante', v.id)}>Ver detalle</button></div></div>)}
             </Table>
           )}
 
           {isVinculacion && view === 'postulaciones' && (
             <Table title="Postulaciones" empty="No hay postulaciones" headers={['Alumno','Vacante','Empresa','Estado','Fecha']}>
-              {postulaciones.map(p => <div className="table-row" key={p.id_postulacion} style={{ gridTemplateColumns: '2fr 1.7fr 1.5fr 1fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{p.foto_perfil ? <img alt="perfil" src={buildFileUrl(p.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(p.alumno)}</div>}<div><b>{p.alumno}</b><div style={{ fontSize: 12, color: '#64748b' }}>{p.carrera}</div></div></div><div>{p.vacante}</div><div>{p.empresa}</div><div>{p.estado}</div><div>{formatFecha(p.fecha_postulacion)}</div></div>)}
+              {filtrarLista(postulaciones).map(p => <div className="table-row" key={p.id_postulacion} style={{ gridTemplateColumns: '2fr 1.7fr 1.5fr 1fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{p.foto_perfil ? <img alt="perfil" src={buildFileUrl(p.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(p.alumno)}</div>}<div><b>{p.alumno}</b><div style={{ fontSize: 12, color: '#64748b' }}>{p.carrera}</div></div></div><div>{p.vacante}</div><div>{p.empresa}</div><div>{p.estado}</div><div>{formatFecha(p.fecha_postulacion)}</div></div>)}
             </Table>
           )}
 
           {isVinculacion && view === 'candidatos' && (
             <Table title="Candidatos con postulaciones" empty="Aún no hay candidatos postulados" headers={['Candidato','Carrera','Cuatrimestre','Postulaciones','Acciones']}>
-              {candidatos.map(c => <div className="table-row" key={c.id} style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{c.foto_perfil ? <img alt="perfil" src={buildFileUrl(c.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(c.nombre)}</div>}<div><b>{c.nombre}</b><div style={{ fontSize: 12, color: '#64748b' }}>{c.correo}</div></div></div><div>{c.carrera}</div><div>{c.semestre || '—'}</div><div>{c.total_postulaciones || 0}</div><div><button className="btn btn-ghost" onClick={() => abrirDetalle('alumno', c.id)}>Ver perfil</button></div></div>)}
+              {filtrarLista(candidatos).map(c => <div className="table-row" key={c.id} style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{c.foto_perfil ? <img alt="perfil" src={buildFileUrl(c.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(c.nombre)}</div>}<div><b>{c.nombre}</b><div style={{ fontSize: 12, color: '#64748b' }}>{c.correo}</div></div></div><div>{c.carrera}</div><div>{c.semestre || '—'}</div><div>{c.total_postulaciones || 0}</div><div><button className="btn btn-ghost" onClick={() => abrirDetalle('alumno', c.id)}>Ver perfil</button></div></div>)}
             </Table>
           )}
 
@@ -403,9 +484,13 @@ export default function DashboardVinculacion() {
                   <div><label className="form-label">Nombre</label><input className="form-input" value={perfilForm.nombre} onChange={e => setPerfilForm({ ...perfilForm, nombre: e.target.value })} /></div>
                   <div><label className="form-label">Apellido</label><input className="form-input" value={perfilForm.apellido} onChange={e => setPerfilForm({ ...perfilForm, apellido: e.target.value })} /></div>
                   <div><label className="form-label">Teléfono</label><input className="form-input" value={perfilForm.telefono} onChange={e => setPerfilForm({ ...perfilForm, telefono: e.target.value })} /></div>
-                  <div></div>
-                  <div><label className="form-label">Nueva contraseña</label><div style={{ position: 'relative' }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} value={perfilForm.nueva_password} onChange={e => setPerfilForm({ ...perfilForm, nueva_password: e.target.value })} placeholder="Opcional" /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}>{showPerfilPass ? '🙈' : '👁️'}</button></div></div>
-                  <div><label className="form-label">Confirmar contraseña</label><div style={{ position: 'relative' }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} value={perfilForm.confirmar_password} onChange={e => setPerfilForm({ ...perfilForm, confirmar_password: e.target.value })} placeholder="Repite la contraseña" /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}>{showPerfilPass ? '🙈' : '👁️'}</button></div></div>
+                  <div><label className="form-label">Cargo institucional</label><input className="form-input" value={perfilForm.cargo_institucional} onChange={e => setPerfilForm({ ...perfilForm, cargo_institucional: e.target.value })} placeholder="Ej. Coordinador de plataforma" /></div>
+                  <div><label className="form-label">Área / departamento</label><input className="form-input" value={perfilForm.area_institucional} onChange={e => setPerfilForm({ ...perfilForm, area_institucional: e.target.value })} /></div>
+                  <div><label className="form-label">Extensión</label><input className="form-input" value={perfilForm.extension} onChange={e => setPerfilForm({ ...perfilForm, extension: e.target.value })} /></div>
+                  <div><label className="form-label">Oficina</label><input className="form-input" value={perfilForm.oficina} onChange={e => setPerfilForm({ ...perfilForm, oficina: e.target.value })} /></div>
+                  <div style={{ gridColumn: '1 / -1' }}><label className="form-label">Descripción / responsabilidades</label><textarea className="form-input" style={{ minHeight: 100 }} value={perfilForm.bio_profesional} onChange={e => setPerfilForm({ ...perfilForm, bio_profesional: e.target.value })} placeholder="Responsabilidades, horarios de contacto o información útil para otros usuarios." /></div>
+                  <div><label className="form-label">Nueva contraseña</label><div style={{ position: 'relative' }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} value={perfilForm.nueva_password} onChange={e => setPerfilForm({ ...perfilForm, nueva_password: e.target.value })} placeholder="Opcional" /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}><AppIcon name={showPerfilPass ? 'eyeOff' : 'eye'} size={18} /></button></div></div>
+                  <div><label className="form-label">Confirmar contraseña</label><div style={{ position: 'relative' }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} value={perfilForm.confirmar_password} onChange={e => setPerfilForm({ ...perfilForm, confirmar_password: e.target.value })} placeholder="Repite la contraseña" /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}><AppIcon name={showPerfilPass ? 'eyeOff' : 'eye'} size={18} /></button></div></div>
                   <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}><button className="btn btn-primary" type="submit">Guardar cambios</button></div>
                 </div>
               </div>
@@ -445,7 +530,7 @@ export default function DashboardVinculacion() {
                 <div className="form-group"><label className="form-label">Correo del responsable *</label><input className="form-input" type="email" value={formEmpresa.responsable_correo} onChange={e => setFormEmpresa({ ...formEmpresa, responsable_correo: e.target.value, correo: e.target.value })} required /></div>
                 <div className="form-group"><label className="form-label">Teléfono del responsable</label><input className="form-input" value={formEmpresa.responsable_telefono} onChange={e => setFormEmpresa({ ...formEmpresa, responsable_telefono: e.target.value, telefono: e.target.value })} /></div>
                 <div className="form-group"><label className="form-label">Estado inicial</label><select className="form-input" value={formEmpresa.estado} onChange={e => setFormEmpresa({ ...formEmpresa, estado: e.target.value })}><option value="habilitada">Habilitada</option><option value="pendiente">Pendiente</option></select></div>
-                <div className="form-group"><label className="form-label">Contraseña temporal *</label><div style={{ position: 'relative' }}><input className="form-input" type={showEmpresaPassword ? 'text' : 'password'} minLength={8} value={formEmpresa.password} onChange={e => setFormEmpresa({ ...formEmpresa, password: e.target.value })} required /><button type="button" onClick={() => setShowEmpresaPassword(!showEmpresaPassword)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}>{showEmpresaPassword ? '🙈' : '👁️'}</button></div></div>
+                <div className="form-group"><label className="form-label">Contraseña temporal *</label><div style={{ position: 'relative' }}><input className="form-input" type={showEmpresaPassword ? 'text' : 'password'} minLength={8} value={formEmpresa.password} onChange={e => setFormEmpresa({ ...formEmpresa, password: e.target.value })} required /><button type="button" onClick={() => setShowEmpresaPassword(!showEmpresaPassword)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}><AppIcon name={showEmpresaPassword ? 'eyeOff' : 'eye'} size={18} /></button></div></div>
                 <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones</label><textarea className="form-input" style={{ minHeight: 80 }} value={formEmpresa.observaciones} onChange={e => setFormEmpresa({ ...formEmpresa, observaciones: e.target.value })} /></div>
               </div>
               <div className="modal-actions"><button className="btn btn-ghost" type="button" onClick={() => setShowEmpresaModal(false)}>Cancelar</button><button className="btn btn-primary" disabled={savingEmpresa}>{savingEmpresa ? 'Guardando...' : 'Guardar empresa'}</button></div>
@@ -476,22 +561,22 @@ function getTituloVista(view, isAdmin) {
 
 function DashboardResumen({ isAdmin, stats, empresasPendientes, abrirDetalle, handleNavClick }) {
   const adminMetrics = [
-    ['Empresas', stats.totalEmpresas, '🏢', '#3b82f6', 'empresas'],
-    ['Estudiantes', stats.totalEstudiantes, '🎓', '#10b981', 'alumnos'],
-    ['Profesores', stats.totalProfesores, '👨‍🏫', '#0ea5e9', 'profesores'],
-    ['Proyectos', stats.totalProyectos, '📁', '#8b5cf6', 'proyectos'],
+    ['Empresas', stats.totalEmpresas, 'building', '#3b82f6', 'empresas'],
+    ['Estudiantes', stats.totalEstudiantes, 'users', '#10b981', 'alumnos'],
+    ['Profesores', stats.totalProfesores, 'teacher', '#0ea5e9', 'profesores'],
+    ['Proyectos', stats.totalProyectos, 'folder', '#8b5cf6', 'proyectos'],
   ];
   const vincMetrics = [
-    ['Empresas pendientes', stats.empresasPendientes, '⏳', '#f59e0b', 'empresas'],
-    ['Empresas habilitadas', stats.empresasHabilitadas, '✅', '#10b981', 'empresas'],
-    ['Vacantes activas', stats.vacantesActivas, '💼', '#3b82f6', 'vacantes'],
-    ['Postulaciones', stats.postulacionesTotales, '🧾', '#8b5cf6', 'postulaciones'],
+    ['Empresas pendientes', stats.empresasPendientes, 'clock', '#f59e0b', 'empresas'],
+    ['Empresas habilitadas', stats.empresasHabilitadas, 'check', '#10b981', 'empresas'],
+    ['Vacantes activas', stats.vacantesActivas, 'briefcase', '#3b82f6', 'vacantes'],
+    ['Postulaciones', stats.postulacionesTotales, 'clipboard', '#8b5cf6', 'postulaciones'],
   ];
   const metrics = isAdmin ? adminMetrics : vincMetrics;
 
   return <>
     <div className="metrics">
-      {metrics.map(([label, value, icon, color, vista]) => <div className="metric-card" key={label} onClick={() => handleNavClick(vista)} style={{ '--mc': color }}><span className="mc-icon">{icon}</span><div className="mc-label">{label}</div><div className="mc-val">{value || 0}</div></div>)}
+      {metrics.map(([label, value, icon, color, vista]) => <div className="metric-card" key={label} onClick={() => handleNavClick(vista)} style={{ '--mc': color }}><span className="mc-icon"><AppIcon name={icon} size={22} /></span><div className="mc-label">{label}</div><div className="mc-val">{value || 0}</div></div>)}
     </div>
     <DashboardInsights
       title={isAdmin ? 'Panorama institucional' : 'Actividad de vinculación'}
@@ -518,24 +603,73 @@ function Table({ title, empty, headers, children }) {
 }
 
 function ChatbotPanel({ chatbotItems, chatbotForm, setChatbotForm, editingBotId, setEditingBotId, guardarChatbot, editarChatbot, eliminarChatbot }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 420px) 1fr', gap: 24 }}>
-    <div className="admin-form" style={{ background: 'white', padding: 24, borderRadius: 16, border: '1px solid #e2e8f0' }}>
-      <h3>{editingBotId ? 'Editar respuesta' : 'Nueva respuesta del bot'}</h3>
-      <form onSubmit={guardarChatbot}>
-        <label className="form-label">Pregunta / intención</label><input className="form-input" value={chatbotForm.pregunta} onChange={e => setChatbotForm({ ...chatbotForm, pregunta: e.target.value })} />
-        <label className="form-label">Palabras clave</label><input className="form-input" value={chatbotForm.keywords} onChange={e => setChatbotForm({ ...chatbotForm, keywords: e.target.value })} placeholder="estadía, cv, horario" />
-        <label className="form-label">Categoría</label><input className="form-input" value={chatbotForm.categoria} onChange={e => setChatbotForm({ ...chatbotForm, categoria: e.target.value })} />
-        <label className="form-label">Respuesta</label><textarea className="form-input" style={{ minHeight: 120 }} value={chatbotForm.respuesta} onChange={e => setChatbotForm({ ...chatbotForm, respuesta: e.target.value })} />
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '12px 0' }}><input type="checkbox" checked={chatbotForm.activa} onChange={e => setChatbotForm({ ...chatbotForm, activa: e.target.checked })} /> Activa</label>
-        <button className="btn btn-primary" type="submit">Guardar</button>
-        {editingBotId && <button className="btn btn-ghost" type="button" onClick={() => { setEditingBotId(null); setChatbotForm({ pregunta: '', respuesta: '', categoria: 'general', keywords: '', activa: true }); }}>Cancelar edición</button>}
-      </form>
-      <div style={{ marginTop: 20, background: '#f8fafc', padding: 14, borderRadius: 12, fontSize: 13, color: '#475569' }}>
-        Recomendación: el bot debe responder por intención, usar palabras clave, consultar fechas de estadía, horarios de profesores, vacantes activas y derivar a Vinculación cuando la pregunta sea de empresas o postulaciones.
+  const [searchBot, setSearchBot] = useState('');
+  const [statusBot, setStatusBot] = useState('todas');
+
+  const categories = [...new Set(chatbotItems.map((item) => item.categoria || 'general'))];
+  const filteredItems = chatbotItems.filter((item) => {
+    const text = `${item.pregunta || ''} ${item.respuesta || ''} ${item.keywords || ''} ${item.categoria || ''}`.toLowerCase();
+    const searchOk = !searchBot.trim() || text.includes(searchBot.trim().toLowerCase());
+    const statusOk = statusBot === 'todas' || (statusBot === 'activas' ? item.activa : !item.activa);
+    return searchOk && statusOk;
+  });
+  const activas = chatbotItems.filter((item) => item.activa).length;
+
+  return <div className="chatbot-studio">
+    <div className="chatbot-studio__hero">
+      <div>
+        <span className="chatbot-studio__eyebrow">CENTRO DE CONOCIMIENTO</span>
+        <h2>Chatbot SkillMatch</h2>
+        <p>Administra intenciones, respuestas y palabras clave desde un panel más claro y fácil de mantener.</p>
+      </div>
+      <div className="chatbot-studio__metrics">
+        <div><b>{chatbotItems.length}</b><span>Respuestas</span></div>
+        <div><b>{activas}</b><span>Activas</span></div>
+        <div><b>{categories.length}</b><span>Categorías</span></div>
       </div>
     </div>
-    <div className="table-wrap">
-      {chatbotItems.map(item => <div className="table-row" key={item.id_pregunta} style={{ gridTemplateColumns: '1.5fr 2fr 1fr' }}><div><b>{item.pregunta}</b><div style={{ fontSize: 12, color: '#64748b' }}>{item.keywords}</div></div><div>{item.respuesta}</div><div><button className="btn btn-ghost" onClick={() => editarChatbot(item)}>Editar</button><button className="btn btn-danger" onClick={() => eliminarChatbot(item.id_pregunta)}>Eliminar</button></div></div>)}
+
+    <div className="chatbot-studio__layout">
+      <div className="admin-form chatbot-editor">
+        <div className="chatbot-editor__title"><AppIcon name="bot" size={20} /><div><h3>{editingBotId ? 'Editar conocimiento' : 'Nueva respuesta'}</h3><small>Define una intención clara y una respuesta breve.</small></div></div>
+        <form onSubmit={guardarChatbot}>
+          <label className="form-label">Pregunta / intención</label>
+          <input className="form-input" value={chatbotForm.pregunta} onChange={e => setChatbotForm({ ...chatbotForm, pregunta: e.target.value })} placeholder="Ej. ¿Cómo puedo postularme a una vacante?" />
+          <label className="form-label">Palabras clave</label>
+          <input className="form-input" value={chatbotForm.keywords} onChange={e => setChatbotForm({ ...chatbotForm, keywords: e.target.value })} placeholder="postulación, vacante, aplicar" />
+          <label className="form-label">Categoría</label>
+          <input className="form-input" list="chatbot-categories" value={chatbotForm.categoria} onChange={e => setChatbotForm({ ...chatbotForm, categoria: e.target.value })} />
+          <datalist id="chatbot-categories">{categories.map(c => <option key={c} value={c} />)}</datalist>
+          <label className="form-label">Respuesta</label>
+          <textarea className="form-input" style={{ minHeight: 150, resize: 'vertical' }} value={chatbotForm.respuesta} onChange={e => setChatbotForm({ ...chatbotForm, respuesta: e.target.value })} placeholder="Escribe una respuesta directa, útil y con el siguiente paso para el usuario." />
+          <label className="chatbot-toggle"><input type="checkbox" checked={chatbotForm.activa} onChange={e => setChatbotForm({ ...chatbotForm, activa: e.target.checked })} /><span /> Disponible para el chatbot</label>
+          <div className="chatbot-editor__actions">
+            <button className="btn btn-primary" type="submit">{editingBotId ? 'Guardar cambios' : 'Agregar respuesta'}</button>
+            {editingBotId && <button className="btn btn-ghost" type="button" onClick={() => { setEditingBotId(null); setChatbotForm({ pregunta: '', respuesta: '', categoria: 'general', keywords: '', activa: true }); }}>Cancelar</button>}
+          </div>
+        </form>
+        <div className="chatbot-preview">
+          <small>Vista previa</small>
+          <div className="chatbot-preview__bubble">{chatbotForm.respuesta || 'La respuesta se verá aquí mientras la editas.'}</div>
+        </div>
+      </div>
+
+      <div className="chatbot-library">
+        <div className="chatbot-library__toolbar">
+          <div className="chatbot-search"><AppIcon name="search" size={16} /><input value={searchBot} onChange={e => setSearchBot(e.target.value)} placeholder="Buscar por intención, keyword o respuesta" /></div>
+          <select value={statusBot} onChange={e => setStatusBot(e.target.value)}><option value="todas">Todas</option><option value="activas">Activas</option><option value="inactivas">Inactivas</option></select>
+        </div>
+        <div className="chatbot-library__count">{filteredItems.length} de {chatbotItems.length} respuestas</div>
+        <div className="chatbot-cards">
+          {filteredItems.length ? filteredItems.map(item => <article className="chatbot-card" key={item.id_pregunta}>
+            <div className="chatbot-card__top"><span className={`chatbot-status ${item.activa ? 'is-active' : ''}`}>{item.activa ? 'Activa' : 'Inactiva'}</span><span className="chatbot-category">{item.categoria || 'general'}</span></div>
+            <h3>{item.pregunta}</h3>
+            <p>{item.respuesta}</p>
+            <div className="chatbot-keywords">{String(item.keywords || '').split(',').filter(Boolean).slice(0, 6).map(k => <span key={k}>{k.trim()}</span>)}</div>
+            <div className="chatbot-card__actions"><button className="btn btn-ghost" onClick={() => editarChatbot(item)}>Editar</button><button className="btn btn-danger" onClick={() => eliminarChatbot(item.id_pregunta)}>Eliminar</button></div>
+          </article>) : <div className="chatbot-empty">No hay respuestas que coincidan con los filtros.</div>}
+        </div>
+      </div>
     </div>
   </div>;
 }
@@ -543,10 +677,10 @@ function ChatbotPanel({ chatbotItems, chatbotForm, setChatbotForm, editingBotId,
 function ReportesVinculacion({ stats, reportes }) {
   return <div style={{ display: 'grid', gap: 20 }}>
     <div className="metrics">
-      <div className="metric-card" style={{ '--mc': '#f59e0b' }}><span className="mc-icon">⏳</span><div className="mc-label">Pendientes</div><div className="mc-val">{stats.empresasPendientes || 0}</div></div>
-      <div className="metric-card" style={{ '--mc': '#10b981' }}><span className="mc-icon">✅</span><div className="mc-label">Habilitadas</div><div className="mc-val">{stats.empresasHabilitadas || 0}</div></div>
-      <div className="metric-card" style={{ '--mc': '#3b82f6' }}><span className="mc-icon">💼</span><div className="mc-label">Vacantes</div><div className="mc-val">{stats.totalVacantes || 0}</div></div>
-      <div className="metric-card" style={{ '--mc': '#8b5cf6' }}><span className="mc-icon">🧾</span><div className="mc-label">Postulaciones</div><div className="mc-val">{stats.postulacionesTotales || 0}</div></div>
+      <div className="metric-card" style={{ '--mc': '#f59e0b' }}><span className="mc-icon"><AppIcon name="clock" size={22} /></span><div className="mc-label">Pendientes</div><div className="mc-val">{stats.empresasPendientes || 0}</div></div>
+      <div className="metric-card" style={{ '--mc': '#10b981' }}><span className="mc-icon"><AppIcon name="check" size={22} /></span><div className="mc-label">Habilitadas</div><div className="mc-val">{stats.empresasHabilitadas || 0}</div></div>
+      <div className="metric-card" style={{ '--mc': '#3b82f6' }}><span className="mc-icon"><AppIcon name="briefcase" size={22} /></span><div className="mc-label">Vacantes</div><div className="mc-val">{stats.totalVacantes || 0}</div></div>
+      <div className="metric-card" style={{ '--mc': '#8b5cf6' }}><span className="mc-icon"><AppIcon name="clipboard" size={22} /></span><div className="mc-label">Postulaciones</div><div className="mc-val">{stats.postulacionesTotales || 0}</div></div>
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
       <MiniReporte title="Empresas por estado" items={reportes.empresasPorEstado || []} />
@@ -655,7 +789,27 @@ function DetalleEmpresa({ empresa, puedeGestionar, cambiarEstadoEmpresa, token, 
 }
 
 function DetalleAlumno({ alumno }) {
-  return <div><div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>{alumno.foto_perfil ? <img alt="alumno" src={buildFileUrl(alumno.foto_perfil)} style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover' }} /> : <div className="user-avatar" style={{ width: 96, height: 96 }}>{initials(`${alumno.nombre} ${alumno.apellido}`)}</div>}<div><h2>{alumno.nombre} {alumno.apellido}</h2><p>{alumno.correo} | {alumno.telefono || 'Sin teléfono'}</p></div></div><p><b>Matrícula:</b> {alumno.matricula} | <b>Carrera:</b> {alumno.carrera}</p><p><b>Cuatrimestre:</b> {alumno.semestre} | <b>Estado académico:</b> {alumno.estado_academico}</p><h3>Proyectos</h3>{alumno.proyectos?.length ? alumno.proyectos.map(p => <div className="table-row" key={p.id_proyecto} style={{ gridTemplateColumns: '2fr 1fr 1fr' }}><div>{p.titulo}</div><div>{p.estado}</div><div>{formatFecha(p.fecha_registro)}</div></div>) : <p>No tiene proyectos.</p>}<h3>Postulaciones</h3>{alumno.postulaciones?.length ? alumno.postulaciones.map(p => <div className="table-row" key={p.id_postulacion} style={{ gridTemplateColumns: '2fr 1fr 1fr' }}><div>{p.vacante}</div><div>{p.empresa}</div><div>{p.estado}</div></div>) : <p>No tiene postulaciones.</p>}</div>;
+  const skills = String(alumno.competencias || '').split(',').map(v => v.trim()).filter(Boolean);
+  return <div className="admin-student-detail">
+    <div className="admin-project-detail__hero">
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+        {alumno.foto_perfil ? <img alt="alumno" src={buildFileUrl(alumno.foto_perfil)} style={{ width: 82, height: 82, borderRadius: 22, objectFit: 'cover' }} /> : <div className="user-avatar" style={{ width: 82, height: 82, borderRadius: 22 }}>{initials(`${alumno.nombre} ${alumno.apellido}`)}</div>}
+        <div><span className="admin-project-detail__eyebrow">PERFIL PROFESIONAL</span><h2 style={{ marginBottom: 5 }}>{alumno.nombre} {alumno.apellido}</h2><p>{alumno.titulo_profesional || alumno.carrera || 'Estudiante UTEQ'}</p></div>
+      </div>
+    </div>
+    <div className="admin-project-facts">
+      <div><small>Carrera</small><strong>{alumno.carrera || '—'}</strong></div>
+      <div><small>Cuatrimestre</small><strong>{alumno.semestre || '—'}</strong></div>
+      <div><small>Disponibilidad</small><strong>{alumno.disponibilidad || '—'}</strong></div>
+    </div>
+    <section><h3>Acerca de</h3><p>{alumno.biografia || 'Sin biografía profesional registrada.'}</p></section>
+    <section><h3>Información de contacto</h3><p>{alumno.correo} · {alumno.telefono || 'Sin teléfono'} · {alumno.ciudad || 'Sin ciudad registrada'}</p></section>
+    <section><h3>Habilidades técnicas</h3><div className="chatbot-keywords">{skills.length ? skills.map(skill => <span key={skill}>{skill}</span>) : <p>No hay habilidades registradas.</p>}</div></section>
+    <section><h3>Perfil y enlaces</h3><p><b>Modalidad:</b> {alumno.modalidad_preferida || '—'} · <b>Idiomas:</b> {alumno.idiomas || '—'}</p><p><b>LinkedIn:</b> {alumno.linkedin || '—'}<br/><b>GitHub:</b> {alumno.github || '—'}<br/><b>Portafolio:</b> {alumno.portafolio || '—'}</p></section>
+    <section><h3>Habilidades blandas</h3><p><b>Score global:</b> {alumno.soft_score ?? '—'}% · Comunicación {alumno.comunicacion ?? '—'}% · Equipo {alumno.trabajo_equipo ?? '—'}% · Liderazgo {alumno.liderazgo ?? '—'}%</p></section>
+    <section><h3>Proyectos</h3>{alumno.proyectos?.length ? alumno.proyectos.map(p => <div className="table-row" key={p.id_proyecto} style={{ gridTemplateColumns: '2fr 1fr 1fr' }}><div>{p.titulo}</div><div>{p.estado}</div><div>{formatFecha(p.fecha_registro)}</div></div>) : <p>No tiene proyectos.</p>}</section>
+    <section><h3>Postulaciones</h3>{alumno.postulaciones?.length ? alumno.postulaciones.map(p => <div className="table-row" key={p.id_postulacion} style={{ gridTemplateColumns: '2fr 1fr 1fr' }}><div>{p.vacante}</div><div>{p.empresa}</div><div>{p.estado}</div></div>) : <p>No tiene postulaciones.</p>}</section>
+  </div>;
 }
 
 function DetalleProfesor({ profesor }) {
@@ -664,17 +818,44 @@ function DetalleProfesor({ profesor }) {
 
 function DetalleProyecto({ proyecto }) {
   const media = proyecto.media || [];
-  return <div>
-    <h2>{proyecto.titulo}</h2>
-    <p><b>Autor:</b> {proyecto.autor || '—'} | <b>Tipo:</b> {proyecto.tipo_autor || '—'} | <b>Estado:</b> {proyecto.estado}</p>
-    {proyecto.foto_autor && <img alt="autor" src={buildFileUrl(proyecto.foto_autor)} style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', marginBottom: 12 }} />}
-    <p><b>Tecnologías:</b> {proyecto.tecnologias || 'No especificadas'}</p>
-    <p><b>Ámbito:</b> {proyecto.ambito_desarrollo || '—'} | <b>Área:</b> {proyecto.area_trabajo || '—'}</p>
-    <h3>Descripción</h3><p>{proyecto.descripcion || 'Sin descripción'}</p>
-    <h3>Objetivo</h3><p>{proyecto.objetivo || 'No especificado'}</p>
-    <h3>Actividades</h3><p>{proyecto.actividades || 'No especificadas'}</p>
-    {media.length > 0 && <><h3>Galería</h3><div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8 }}>{media.map(m => <div key={m.id_media || m.ruta_archivo} style={{ minWidth: 220, height: 140, borderRadius: 12, overflow: 'hidden', border: '1px solid #e2e8f0', background: '#f8fafc' }}>{String(m.mime_type || '').startsWith('video/') || m.tipo === 'video' ? <video src={buildFileUrl(m.ruta_archivo)} controls style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <img src={buildFileUrl(m.ruta_archivo)} alt="media" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}</div>)}</div></>}
-    {proyecto.colaboradores?.length > 0 && <><h3>Colaboradores</h3>{proyecto.colaboradores.map((c, idx) => <div key={idx} className="table-row" style={{ gridTemplateColumns: '2fr 1fr 1fr' }}><div>{c.nombre} {c.apellido}</div><div>{c.correo}</div><div>{c.carrera}</div></div>)}</>}
+  const evidencias = proyecto.evidencias || [];
+  const portada = proyecto.img_principal || media.find(m => inferAssetType(m) === 'imagen')?.ruta_archivo || null;
+  const galeria = media.filter(m => m.ruta_archivo && m.ruta_archivo !== portada);
+  const docs = evidencias.filter(e => inferAssetType(e) === 'documento' || inferAssetType(e) === 'archivo');
+  const visualEvidence = evidencias.filter(e => ['imagen','video'].includes(inferAssetType(e)));
+
+  return <div className="admin-project-detail">
+    <div className="admin-project-detail__hero">
+      <div>
+        <span className="admin-project-detail__eyebrow">PROYECTO UNIVERSITARIO</span>
+        <h2>{proyecto.titulo}</h2>
+        <p><b>Autor:</b> {proyecto.autor || '—'} · <b>Tipo:</b> {proyecto.tipo_autor || '—'} · <b>Estado:</b> {proyecto.estado}</p>
+      </div>
+      {proyecto.foto_autor && <img className="admin-project-detail__author" alt="autor" src={buildFileUrl(proyecto.foto_autor)} />}
+    </div>
+
+    {portada && <div className="admin-project-cover"><img src={buildFileUrl(portada)} alt={`Portada de ${proyecto.titulo}`} /></div>}
+
+    <div className="admin-project-facts">
+      <div><small>Tecnologías</small><strong>{proyecto.tecnologias || 'No especificadas'}</strong></div>
+      <div><small>Ámbito</small><strong>{proyecto.ambito_desarrollo || '—'}</strong></div>
+      <div><small>Área</small><strong>{proyecto.area_trabajo || '—'}</strong></div>
+    </div>
+
+    <section><h3>Descripción</h3><p>{proyecto.descripcion || 'Sin descripción'}</p></section>
+    <section><h3>Objetivo</h3><p>{proyecto.objetivo || 'No especificado'}</p></section>
+    <section><h3>Actividades</h3><p>{proyecto.actividades || 'No especificadas'}</p></section>
+
+    {galeria.length > 0 && <section><h3>Galería del proyecto</h3><div className="admin-project-gallery">{galeria.map(m => <div key={m.id_media || m.ruta_archivo} className="admin-project-media">{inferAssetType(m) === 'video' ? <video src={buildFileUrl(m.ruta_archivo)} controls preload="metadata" /> : <img src={buildFileUrl(m.ruta_archivo)} alt={archivoNombre(m)} />}</div>)}</div></section>}
+
+    {visualEvidence.length > 0 && <section><h3>Evidencias multimedia</h3><div className="admin-project-gallery">{visualEvidence.map(e => <div key={e.id_evidencia} className="admin-project-media">{inferAssetType(e) === 'video' ? <video src={buildFileUrl(e.ruta_archivo)} controls preload="metadata" /> : <a href={buildFileUrl(e.ruta_archivo)} target="_blank" rel="noreferrer"><img src={buildFileUrl(e.ruta_archivo)} alt={archivoNombre(e)} /></a>}</div>)}</div></section>}
+
+    <section>
+      <h3>Documentación</h3>
+      {docs.length ? <div className="admin-project-docs">{docs.map(e => <a key={e.id_evidencia} href={buildFileUrl(e.ruta_archivo)} target="_blank" rel="noreferrer"><AppIcon name="file" size={18} /><div><strong>{archivoNombre(e)}</strong><small>{e.mime_type || 'Documento del proyecto'}</small></div><span>↗</span></a>)}</div> : <p>No hay documentación registrada.</p>}
+    </section>
+
+    {proyecto.colaboradores?.length > 0 && <section><h3>Colaboradores</h3>{proyecto.colaboradores.map((c, idx) => <div key={idx} className="table-row" style={{ gridTemplateColumns: '2fr 1fr 1fr' }}><div>{c.nombre} {c.apellido}</div><div>{c.correo}</div><div>{c.carrera}</div></div>)}</section>}
   </div>;
 }
 

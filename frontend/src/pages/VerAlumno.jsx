@@ -1,191 +1,192 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import '../CSS/VerAlumno.css';
 import { API_BASE, buildFileUrl } from '../config/api';
+import AppIcon from '../components/AppIcon';
+
+const splitList = (value) => String(value || '')
+  .split(',')
+  .map((item) => item.replace(/[\[\]"']/g, '').trim())
+  .filter(Boolean);
+
+const initials = (name) => name
+  ? name.split(' ').filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+  : 'ST';
+
+function ProjectCover({ project }) {
+  const media = Array.isArray(project?.media) ? project.media : [];
+  const first = project?.img_principal || media.find((item) => item?.tipo === 'imagen')?.ruta_archivo || '';
+  if (!first) {
+    return (
+      <div className="student-project-cover student-project-cover--empty">
+        <AppIcon name="image" size={28} />
+        <span>Sin portada</span>
+      </div>
+    );
+  }
+  return <img className="student-project-cover" src={buildFileUrl(first)} alt={`Portada de ${project.titulo}`} />;
+}
 
 export default function VerAlumno() {
-  const { id } = useParams(); 
+  const { id } = useParams();
   const navigate = useNavigate();
-  
   const [alumno, setAlumno] = useState(null);
   const [proyectos, setProyectos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    window.scrollTo(0, 0); 
+    window.scrollTo(0, 0);
+    const cargarPerfilAlumno = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/estudiante/perfil-publico/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.mensaje || 'No se pudo cargar el perfil.');
+        setAlumno(data.alumno);
+        setProyectos(data.proyectos || []);
+      } catch (err) {
+        setError(err.message || 'Error de conexión con el servidor.');
+      } finally {
+        setLoading(false);
+      }
+    };
     cargarPerfilAlumno();
   }, [id]);
 
-  const cargarPerfilAlumno = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/estudiante/perfil-publico/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
+  const tecnologias = useMemo(() => splitList(alumno?.competencias), [alumno?.competencias]);
+  const idiomas = useMemo(() => splitList(alumno?.idiomas), [alumno?.idiomas]);
+  const links = [
+    ['LinkedIn', alumno?.linkedin],
+    ['GitHub', alumno?.github],
+    ['Portafolio', alumno?.portafolio],
+  ].filter(([, value]) => value);
 
-      if (data.ok) {
-        setAlumno(data.alumno);
-        setProyectos(data.proyectos || []);
-      } else {
-        setError(data.mensaje || 'No se pudo cargar el perfil.');
-      }
-    } catch (err) {
-      setError('Error de conexión con el servidor.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (loading) return <div className="student-profile-state">Cargando perfil del estudiante...</div>;
+  if (error) return (
+    <div className="student-profile-state student-profile-state--error">
+      <AppIcon name="alert" size={28} />
+      <h3>{error}</h3>
+      <button onClick={() => navigate(-1)}>Volver</button>
+    </div>
+  );
 
-  const initials = (name) => name ? name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() : "ST";
-
-  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: '50px', color: '#64748b' }}>Cargando perfil del estudiante...</div>;
-  if (error) return <div style={{ textAlign: 'center', padding: '50px' }}><h3 style={{ color: '#ef4444' }}>{error}</h3><button onClick={() => navigate(-1)} style={{ padding: '10px 20px', background: '#244E7C', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer', marginTop: '15px' }}>Volver</button></div>;
+  const soft = alumno?.habilidades_blandas;
 
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', padding: 'clamp(15px, 3vw, 40px)', fontFamily: "'Montserrat', sans-serif" }}>
-      <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-        
-        {/* Botón de regreso */}
-        <div style={{ marginBottom: '20px' }}>
-          <button 
-            onClick={() => navigate(-1)}
-            style={{ background: 'none', border: 'none', color: '#244E7C', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-          >
-            ← Volver
-          </button>
-        </div>
+    <div className="perfil-alumno-container">
+      <div className="student-profile-shell">
+        <button className="btn-back student-back" onClick={() => navigate(-1)}>← Volver</button>
 
- {/* CONTENEDOR RESPONSIVO PRINCIPAL (FLEX-WRAP) */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '30px', alignItems: 'flex-start' }}>
-          
-          {/* COLUMNA IZQUIERDA: Info General */}
-          <aside style={{ flex: '1 1 300px', minWidth: '280px', background: 'white', padding: '30px 20px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.03)', textAlign: 'center', position: 'sticky', top: '20px' }}>
-            <div style={{ width: '100px', height: '100px', background: '#244E7C', color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '36px', fontWeight: '800', margin: '0 auto 20px auto', boxShadow: '0 8px 15px rgba(36,78,124,0.2)', overflow: 'hidden' }}>
-              {alumno?.foto_perfil ? <img src={buildFileUrl(alumno.foto_perfil)} alt="Foto del estudiante" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(alumno?.nombre)}
+        <div className="student-profile-grid">
+          <aside className="student-profile-aside">
+            <div className="student-avatar">
+              {alumno?.foto_perfil
+                ? <img src={buildFileUrl(alumno.foto_perfil)} alt="Foto del estudiante" />
+                : initials(`${alumno?.nombre || ''} ${alumno?.apellido || ''}`)}
             </div>
-            <h1 style={{ color: '#232E56', fontSize: '24px', fontWeight: '800', marginBottom: '5px' }}>{alumno?.nombre} {alumno?.apellido}</h1>
-            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '15px', fontWeight: '600' }}>{alumno?.carrera}</p>
-            <div style={{ background: '#dcfce7', color: '#166534', padding: '6px 12px', borderRadius: '20px', display: 'inline-block', fontSize: '12px', fontWeight: 'bold', marginBottom: '30px' }}>
-              ✓ Estudiante UTEQ
+            <h1>{alumno?.nombre} {alumno?.apellido}</h1>
+            <p className="student-professional-title">{alumno?.titulo_profesional || alumno?.carrera || 'Estudiante UTEQ'}</p>
+            <span className="student-verified"><AppIcon name="check" size={14} /> Estudiante UTEQ</span>
+
+            <div className="student-mini-stats">
+              <div><strong>{proyectos.length}</strong><span>Proyectos</span></div>
+              <div><strong>{alumno?.semestre || '—'}</strong><span>Cuatrimestre</span></div>
             </div>
-            
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '22px', fontWeight: '800', color: '#232E56' }}>{proyectos.length}</div>
-                <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Proyectos</div>
+
+            <div className="student-contact-list">
+              <div><AppIcon name="mail" /><span>{alumno?.correo || 'Sin correo'}</span></div>
+              {alumno?.telefono && <div><AppIcon name="phone" /><span>{alumno.telefono}</span></div>}
+              {alumno?.ciudad && <div><AppIcon name="map" /><span>{alumno.ciudad}</span></div>}
+            </div>
+
+            {links.length > 0 && (
+              <div className="student-link-list">
+                {links.map(([label, href]) => (
+                  <a key={label} href={/^https?:\/\//i.test(href) ? href : `https://${href}`} target="_blank" rel="noreferrer">
+                    <AppIcon name="link" size={16} /> {label}
+                  </a>
+                ))}
               </div>
-              <div style={{ width: '1px', background: '#e2e8f0' }}></div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '22px', fontWeight: '800', color: '#232E56' }}>Activo</div>
-                <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Estado</div>
-              </div>
-            </div>
+            )}
           </aside>
 
-          {/* COLUMNA DERECHA: Proyectos y Contacto */}
-          <main style={{ flex: '2 1 500px', minWidth: '300px', display: 'flex', flexDirection: 'column', gap: '30px' }}>
-            
-            {/* SECCIÓN CONTACTO */}
-            <section style={{ background: 'white', padding: '30px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-              <h2 style={{ color: '#232E56', fontSize: '18px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>Información de Contacto</h2>
- {/* GRID RESPONSIVO PARA TARJETITAS */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-                
-                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <div style={{ background: '#e0e7ff', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>
-                    📧
-                  </div>
-                  <div style={{ overflow: 'hidden' }}>
-                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Correo Electrónico</div>
-                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: '600', marginTop: '2px', wordBreak: 'break-all' }}>{alumno?.correo}</div>
-                  </div>
-                </div>
-
-                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <div style={{ background: '#dcfce7', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>
-                    🎓
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Matrícula</div>
-                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: '600', marginTop: '2px' }}>{alumno?.matricula}</div>
-                  </div>
-                </div>
-
-                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <div style={{ background: '#fef3c7', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>
-                    📅
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Nivel Académico</div>
-                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: '600', marginTop: '2px' }}>{alumno?.semestre}° Cuatrimestre</div>
-                  </div>
-                </div>
-
+          <main className="student-profile-main">
+            <section className="student-section student-about">
+              <div className="student-section-head">
+                <span>PERFIL PROFESIONAL</span>
+                <h2>Sobre el estudiante</h2>
+              </div>
+              <p>{alumno?.biografia || 'Este estudiante todavía no ha agregado una presentación profesional.'}</p>
+              <div className="student-fact-grid">
+                <div><span>Carrera</span><strong>{alumno?.carrera || 'No especificada'}</strong></div>
+                <div><span>Matrícula</span><strong>{alumno?.matricula || 'No especificada'}</strong></div>
+                <div><span>Disponibilidad</span><strong>{alumno?.disponibilidad || 'No especificada'}</strong></div>
+                <div><span>Modalidad preferida</span><strong>{alumno?.modalidad_preferida || 'No especificada'}</strong></div>
               </div>
             </section>
 
-            {/* SECCIÓN HABILIDADES BLANDAS */}
-            <section style={{ background: 'white', padding: '30px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-              <h2 style={{ color: '#232E56', fontSize: '18px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>Habilidades blandas</h2>
-              {alumno?.habilidades_blandas ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
-                  {[
-                    ['Global', alumno.habilidades_blandas.puntaje_total],
-                    ['Comunicación', alumno.habilidades_blandas.comunicacion],
-                    ['Trabajo equipo', alumno.habilidades_blandas.trabajo_equipo],
-                    ['Liderazgo', alumno.habilidades_blandas.liderazgo],
-                    ['Resolución', alumno.habilidades_blandas.resolucion_problemas],
-                    ['Adaptabilidad', alumno.habilidades_blandas.adaptabilidad],
-                    ['Profesionalismo', alumno.habilidades_blandas.profesionalismo],
-                  ].map(([label, value]) => (
-                    <div key={label} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 14, padding: 14 }}>
-                      <div style={{ fontSize: 12, color: '#64748b', fontWeight: 800 }}>{label}</div>
-                      <div style={{ fontSize: 24, color: '#244E7C', fontWeight: 900 }}>{value ?? 0}%</div>
-                    </div>
-                  ))}
+            <section className="student-section">
+              <div className="student-section-head"><span>COMPETENCIAS</span><h2>Habilidades e idiomas</h2></div>
+              <div className="student-skill-groups">
+                <div>
+                  <h3>Habilidades técnicas</h3>
+                  <div className="student-chips">
+                    {tecnologias.length ? tecnologias.map((item) => <span key={item}>{item}</span>) : <em>Sin habilidades registradas</em>}
+                  </div>
                 </div>
-              ) : (
-                <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '12px', color: '#64748b' }}>Este estudiante todavía no ha completado el test de habilidades blandas.</div>
-              )}
+                <div>
+                  <h3>Idiomas</h3>
+                  <div className="student-chips student-chips--soft">
+                    {idiomas.length ? idiomas.map((item) => <span key={item}>{item}</span>) : <em>Sin idiomas registrados</em>}
+                  </div>
+                </div>
+              </div>
             </section>
 
-            {/* SECCIÓN PORTAFOLIO */}
-            <section style={{ background: 'white', padding: '30px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-              <h2 style={{ color: '#232E56', fontSize: '18px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>Portafolio de Proyectos Académicos</h2>
-              {proyectos.length === 0 ? (
-                <div style={{ padding: '40px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', color: '#94a3b8', fontStyle: 'italic' }}>Este estudiante aún no ha registrado proyectos públicos.</div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                  {proyectos.map((p) => (
-                    <div key={p.id_proyecto} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', transition: 'transform 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} onMouseOver={e => e.currentTarget.style.transform='translateY(-5px)'} onMouseOut={e => e.currentTarget.style.transform='translateY(0)'}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                        <h3 style={{ fontSize: '16px', color: '#232E56', margin: 0, fontWeight: '800', lineHeight: '1.3' }}>{p.titulo}</h3>
-                        <span style={{ fontSize: '11px', color: '#94a3b8', background: '#f1f5f9', padding: '4px 8px', borderRadius: '12px', whiteSpace: 'nowrap', marginLeft: '10px' }}>{new Date(p.fecha_registro).toLocaleDateString()}</span>
-                      </div>
-                      <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '15px', flex: 1, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.descripcion}</p>
-                      
-                      {/* Tecnologías */}
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
-                        {p.tecnologias?.split(',').map((tech, i) => {
-                          const cleanTech = tech.replace(/[\[\]"']/g, '').trim();
-                          if (!cleanTech) return null;
-                          return (
-                            <span key={i} style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '12px' }}>{cleanTech}</span>
-                          );
-                        })}
-                      </div>
+            <section className="student-section">
+              <div className="student-section-head"><span>SOFT SKILLS</span><h2>Habilidades blandas</h2></div>
+              {soft ? (
+                <div className="student-soft-grid">
+                  {[
+                    ['Global', soft.puntaje_total],
+                    ['Comunicación', soft.comunicacion],
+                    ['Trabajo en equipo', soft.trabajo_equipo],
+                    ['Liderazgo', soft.liderazgo],
+                    ['Resolución', soft.resolucion_problemas],
+                    ['Adaptabilidad', soft.adaptabilidad],
+                    ['Profesionalismo', soft.profesionalismo],
+                  ].map(([label, value]) => (
+                    <div key={label}><span>{label}</span><strong>{value ?? 0}%</strong><i><b style={{ width: `${Math.max(0, Math.min(100, Number(value) || 0))}%` }} /></i></div>
+                  ))}
+                </div>
+              ) : <div className="student-empty"><AppIcon name="brain" /> Aún no completa la evaluación de habilidades blandas.</div>}
+            </section>
 
-                      <button 
-                        onClick={() => navigate(`/proyecto/${p.id_proyecto}`)}
-                        style={{ width: '100%', padding: '12px', background: '#232E56', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'background 0.2s' }}
-                        onMouseOver={e => e.currentTarget.style.background='#1e293b'}
-                        onMouseOut={e => e.currentTarget.style.background='#232E56'}
-                      >
-                        Ver Evidencias del Proyecto
-                      </button>
-                    </div>
+            <section className="student-section">
+              <div className="student-section-head"><span>PORTAFOLIO</span><h2>Proyectos académicos</h2></div>
+              {proyectos.length === 0 ? (
+                <div className="student-empty"><AppIcon name="folder" /> Este estudiante aún no ha registrado proyectos públicos.</div>
+              ) : (
+                <div className="student-project-grid">
+                  {proyectos.map((project) => (
+                    <article key={project.id_proyecto} className="student-project-card">
+                      <ProjectCover project={project} />
+                      <div className="student-project-body">
+                        <div className="student-project-meta">
+                          <span>{project.tipo || 'Proyecto universitario'}</span>
+                          <time>{project.fecha_registro ? new Date(project.fecha_registro).toLocaleDateString('es-MX') : ''}</time>
+                        </div>
+                        <h3>{project.titulo}</h3>
+                        <p>{project.descripcion || 'Sin descripción.'}</p>
+                        <div className="student-chips">
+                          {splitList(project.tecnologias).slice(0, 6).map((tech) => <span key={tech}>{tech}</span>)}
+                        </div>
+                        <button onClick={() => navigate(`/proyecto/${project.id_proyecto}`)}>Ver proyecto <span>→</span></button>
+                      </div>
+                    </article>
                   ))}
                 </div>
               )}

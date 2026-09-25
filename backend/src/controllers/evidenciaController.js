@@ -4,6 +4,17 @@ const Estudiante = require('../models/Estudiante');
 const Proyecto = require('../models/Proyecto');
 const Evidencia = require('../models/Evidencia');
 
+
+function tipoArchivo(mime = '', original = '') {
+  const value = String(mime || '').toLowerCase();
+  const name = String(original || '').toLowerCase();
+  if (value.startsWith('image/')) return 'imagen';
+  if (value.startsWith('video/')) return 'video';
+  if (value === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  return 'documento';
+}
+
+
 const obtenerEstudianteDesdeToken = async (req) => {
   const id_usuario = req.usuario.id_usuario;
   return await Estudiante.findByUsuarioId(id_usuario);
@@ -53,7 +64,7 @@ exports.subirEvidencia = async (req, res) => {
     const id_evidencia = await Evidencia.create({
       id_proyecto,
       ruta_archivo: archivo.path, // <--- URL completa de la nube
-      tipo: tipo || archivo.mimetype.split('/')[1] || 'archivo',
+      tipo: tipo || tipoArchivo(archivo.mimetype, archivo.originalname),
       nombre_original: archivo.originalname,
       mime_type: archivo.mimetype,
       tamano_bytes: archivo.size,

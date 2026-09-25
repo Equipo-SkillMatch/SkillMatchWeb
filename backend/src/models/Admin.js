@@ -195,6 +195,15 @@ class Admin {
         e.matricula,
         e.semestre,
         e.estado_academico,
+        e.titulo_profesional,
+        e.biografia,
+        e.linkedin,
+        e.github,
+        e.portafolio,
+        e.idiomas,
+        e.disponibilidad,
+        e.modalidad_preferida,
+        e.ciudad,
         ss.puntaje_total AS soft_score,
         ss.fecha_realizacion AS soft_fecha,
         COUNT(DISTINCT p.id_proyecto) AS total_proyectos,
@@ -235,6 +244,15 @@ class Admin {
         e.cuatrimestre_inicial,
         e.fecha_inicio_carrera,
         e.estado_academico,
+        e.titulo_profesional,
+        e.biografia,
+        e.linkedin,
+        e.github,
+        e.portafolio,
+        e.idiomas,
+        e.disponibilidad,
+        e.modalidad_preferida,
+        e.ciudad,
         ss.puntaje_total AS soft_score,
         ss.comunicacion,
         ss.trabajo_equipo,
@@ -397,7 +415,13 @@ class Admin {
       WHERE pc.id_proyecto = ?
       ORDER BY u.nombre ASC
     `, [id_proyecto]).catch(() => [[]]);
-    return { ...rows[0], media, colaboradores };
+    const [evidencias] = await db.query(`
+      SELECT id_evidencia, ruta_archivo, tipo, nombre_original, mime_type, tamano_bytes, hash_archivo, fecha_subida
+      FROM evidencias
+      WHERE id_proyecto = ?
+      ORDER BY fecha_subida DESC, id_evidencia DESC
+    `, [id_proyecto]).catch(() => [[]]);
+    return { ...rows[0], media, colaboradores, evidencias };
   }
 
   static async getAllVacantes() {

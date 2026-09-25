@@ -644,3 +644,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
     gap: 18px;
   }
 }
+
+/* SkillMatch V3 - perfil profesional */
+.professional-profile-card{margin:20px 0 24px;padding:20px;border:1px solid #dce7f1;border-radius:16px;background:linear-gradient(135deg,#f8fbfe,#fff);box-shadow:0 6px 18px rgba(15,39,69,.05)}
+.professional-profile-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}.professional-profile-card__head span{display:block;font-size:10px;font-weight:900;letter-spacing:.14em;color:#2676b7;margin-bottom:4px}.professional-profile-card__head h3{margin:0;color:#172b49;font-size:18px}.professional-profile-card__head .btn{display:inline-flex;align-items:center;gap:7px}.professional-profile-card>p{margin:0;color:#5c6b80;line-height:1.7;font-size:13px}.professional-profile-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.professional-profile-links a,.professional-profile-links span{padding:7px 10px;border-radius:999px;background:#eef5fb;color:#24577f;font-size:11px;font-weight:700;text-decoration:none}.professional-profile-links a:hover{background:#dfedf8}
+@media(max-width:640px){.professional-profile-card__head{flex-direction:column}.professional-profile-card__head .btn{width:100%;justify-content:center}}
+.quick-access-icon{width:42px;height:42px;display:grid;place-items:center;margin-bottom:10px;border-radius:12px;background:#eef5fb;color:#24577f}
+.topbar .btn{display:inline-flex;align-items:center;gap:7px}

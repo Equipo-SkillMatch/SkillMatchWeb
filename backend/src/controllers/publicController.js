@@ -2,6 +2,39 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
+const APP_VERSION = '3.1.0-media-profile';
+
+function inferMimeType(item = {}) {
+  if (item.mime_type) return String(item.mime_type);
+  const source = String(item.ruta_archivo || item.nombre_original || '').split('?')[0].toLowerCase();
+  if (/\.(jpe?g)$/.test(source)) return 'image/jpeg';
+  if (/\.png$/.test(source)) return 'image/png';
+  if (/\.webp$/.test(source)) return 'image/webp';
+  if (/\.mp4$/.test(source)) return 'video/mp4';
+  if (/\.webm$/.test(source)) return 'video/webm';
+  if (/\.mov$/.test(source)) return 'video/quicktime';
+  if (/\.pdf$/.test(source)) return 'application/pdf';
+  return '';
+}
+
+function normalizeEvidence(item = {}) {
+  const mime_type = inferMimeType(item);
+  const cleanPath = String(item.ruta_archivo || '').split('?')[0];
+  const basename = cleanPath.split('/').pop() || 'Archivo del proyecto';
+  return {
+    ...item,
+    mime_type,
+    nombre_original: item.nombre_original || basename,
+    categoria_archivo: mime_type.startsWith('image/')
+      ? 'imagen'
+      : mime_type.startsWith('video/')
+        ? 'video'
+        : mime_type === 'application/pdf'
+          ? 'documento'
+          : 'archivo',
+  };
+}
+
 
 function limpiarGaleria(media = [], portada = null) {
   return (Array.isArray(media) ? media : []).filter((item) => {
@@ -16,7 +49,7 @@ exports.listarProyectosPublicos = async (req, res) => {
 
     const proyectosFormateados = proyectos.map((p, index) => {
       // Compatibilidad con proyectos antiguos: si no hay portada explícita, usa la primera imagen.
-      const portada = p.img_principal || p.media?.find((m) => m.tipo === 'imagen')?.ruta_archivo || p.media?.[0]?.ruta_archivo || null;
+      const portada = p.img_principal || p.media?.find((m) => m.tipo === 'imagen')?.ruta_archivo || null;
       return {
         id_proyecto: p.id_proyecto,
         title: p.titulo,
@@ -38,7 +71,6 @@ exports.listarProyectosPublicos = async (req, res) => {
         rating: parseFloat(p.promedio_estrellas || 0),
         total_reviews: Number(p.total_calificaciones || 0),
         thumb: (index % 3) + 1,
-        icon: ['🖥️', '📱', '🗄️'][index % 3],
       };
     });
 
@@ -79,7 +111,7 @@ exports.obtenerDetalleProyecto = async (req, res) => {
 
     const p = proyectos[0];
     const mediaOriginal = await Proyecto.getMedia(id);
-    const portada = p.img_principal || mediaOriginal.find((m) => m.tipo === 'imagen')?.ruta_archivo || mediaOriginal[0]?.ruta_archivo || null;
+    const portada = p.img_principal || mediaOriginal.find((m) => m.tipo === 'imagen')?.ruta_archivo || null;
     const media = limpiarGaleria(mediaOriginal, portada);
 
     const proyectoFormateado = {
@@ -94,10 +126,11 @@ exports.obtenerDetalleProyecto = async (req, res) => {
       img_principal: portada,
     };
 
-    const [evidencias] = await db.query(
-      `SELECT * FROM evidencias WHERE id_proyecto = ? ORDER BY fecha_subida DESC`,
+    const [evidenciasRows] = await db.query(
+      `SELECT * FROM evidencias WHERE id_proyecto = ? ORDER BY fecha_subida DESC, id_evidencia DESC`,
       [id]
     );
+    const evidencias = evidenciasRows.map(normalizeEvidence);
 
     const [colaboradores] = await db.query(
       `SELECT u.nombre, u.apellido, u.correo, e.matricula, e.carrera
@@ -165,3 +198,9 @@ exports.calificarProyecto = async (req, res) => {
     return res.status(500).json({ ok: false, mensaje: 'Error interno al guardar la calificación.' });
   }
 };
+
+exports.obtenerVersion = (_req, res) => res.json({
+  ok: true,
+  version: APP_VERSION,
+  storage: process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET ? 'cloudinary' : 'local',
+});
