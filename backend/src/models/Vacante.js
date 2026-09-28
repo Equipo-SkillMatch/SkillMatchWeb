@@ -126,11 +126,7 @@ class Vacante {
   static async getPerfilEmpresa(id_usuario) {
     const [rows] = await db.query(`
       SELECT
-        emp.id_empresa,
-        emp.razon_social,
-        emp.giro,
-        emp.contacto,
-        emp.estado,
+        emp.*,
         u.nombre,
         u.apellido,
         u.correo,
@@ -179,8 +175,8 @@ class Vacante {
     return rows;
   }
 
-  static async create({ id_empresa, titulo, categoria, nivel, descripcion, requisitos }) {
-    const empresa = await this.getIdEmpresaByUsuario(id_empresa);
+  static async create(data) {
+    const empresa = await this.getIdEmpresaByUsuario(data.id_empresa);
     if (!empresa) throw new Error('Empresa no encontrada');
     if (empresa.estado !== 'habilitada') {
       const err = new Error('Tu empresa aún no está habilitada por Vinculación. No puedes publicar vacantes todavía.');
@@ -188,10 +184,19 @@ class Vacante {
       throw err;
     }
 
+    const fields = [
+      'id_empresa','titulo','categoria','nivel','descripcion','requisitos','ubicacion','modalidad',
+      'tipo_oportunidad','horario','salario_min','salario_max','moneda','mostrar_salario','plazas',
+      'fecha_limite','actividades','responsabilidades','requisitos_obligatorios','requisitos_deseables',
+      'tecnologias_requeridas','tecnologias_deseables','habilidades_blandas','beneficios','experiencia',
+      'carrera_preferida'
+    ];
+    const values = fields.map((field) => data[field] ?? null);
+    const placeholders = fields.map(() => '?').join(', ');
     const [result] = await db.query(`
-      INSERT INTO vacantes (id_empresa, titulo, categoria, nivel, descripcion, requisitos, estado)
-      VALUES (?, ?, ?, ?, ?, ?, 'abierta')
-    `, [id_empresa, titulo, categoria || null, nivel || null, descripcion || null, requisitos || null]);
+      INSERT INTO vacantes (${fields.join(', ')}, estado)
+      VALUES (${placeholders}, 'abierta')
+    `, values);
 
     return result.insertId;
   }
@@ -204,25 +209,74 @@ class Vacante {
       SELECT
         v.*,
         emp.razon_social AS empresa,
+        emp.descripcion_empresa,
+        emp.ubicacion AS empresa_ubicacion,
+        emp.sitio_web,
+        emp.tamano_empresa,
+        emp.linkedin AS empresa_linkedin,
+        emp.cultura_valores,
+        emp.beneficios_empresa,
+        emp.proceso_seleccion,
+        u.foto_perfil AS empresa_logo,
         COUNT(p.id_postulacion) AS total_postulaciones
       FROM vacantes v
       JOIN empresas emp ON v.id_empresa = emp.id_empresa
+      JOIN usuarios u ON u.id_usuario = emp.id_empresa
       LEFT JOIN postulaciones p ON p.id_vacante = v.id_vacante
       ${where}
-      GROUP BY v.id_vacante, emp.razon_social
+      GROUP BY v.id_vacante, emp.id_empresa, u.id_usuario
       LIMIT 1
     `, params);
 
     return rows[0] || null;
   }
 
-  static async update(id_vacante, id_empresa, { titulo, categoria, nivel, descripcion, requisitos, estado }) {
+  static async findForStudent(id_vacante, id_estudiante) {
+    const [rows] = await db.query(`
+      SELECT
+        v.*,
+        emp.razon_social AS empresa,
+        emp.giro,
+        emp.sector,
+        emp.rfc,
+        emp.domicilio AS empresa_domicilio,
+        emp.ubicacion AS empresa_ubicacion,
+        emp.descripcion_empresa,
+        emp.sitio_web,
+        emp.tamano_empresa,
+        emp.anio_fundacion,
+        emp.linkedin AS empresa_linkedin,
+        emp.cultura_valores,
+        emp.beneficios_empresa,
+        emp.proceso_seleccion,
+        emp.estado AS empresa_estado,
+        u.foto_perfil AS empresa_logo,
+        p.estado AS estado_postulacion
+      FROM vacantes v
+      JOIN empresas emp ON v.id_empresa = emp.id_empresa
+      JOIN usuarios u ON u.id_usuario = emp.id_empresa
+      LEFT JOIN postulaciones p ON p.id_vacante = v.id_vacante AND p.id_estudiante = ?
+      WHERE v.id_vacante = ? AND v.estado = 'abierta' AND emp.estado = 'habilitada'
+      LIMIT 1
+    `, [id_estudiante, id_vacante]);
+    return rows[0] || null;
+  }
+
+  static async update(id_vacante, id_empresa, data) {
+    const fields = [
+      'titulo','categoria','nivel','descripcion','requisitos','ubicacion','modalidad','tipo_oportunidad',
+      'horario','salario_min','salario_max','moneda','mostrar_salario','plazas','fecha_limite','actividades',
+      'responsabilidades','requisitos_obligatorios','requisitos_deseables','tecnologias_requeridas',
+      'tecnologias_deseables','habilidades_blandas','beneficios','experiencia','carrera_preferida','estado'
+    ];
+    const assignments = fields.map((field) => `${field} = ?`).join(', ');
+    const values = fields.map((field) => data[field] ?? null);
+    values.push(id_vacante, id_empresa);
     const [result] = await db.query(`
       UPDATE vacantes
-      SET titulo = ?, categoria = ?, nivel = ?, descripcion = ?, requisitos = ?, estado = ?
+      SET ${assignments}
       WHERE id_vacante = ? AND id_empresa = ?
-    `, [titulo, categoria || null, nivel || null, descripcion || null, requisitos || null, estado || 'abierta', id_vacante, id_empresa]);
-
+    `, values);
     return result.affectedRows;
   }
 

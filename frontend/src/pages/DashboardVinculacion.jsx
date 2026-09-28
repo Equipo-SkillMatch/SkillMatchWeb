@@ -159,6 +159,28 @@ export default function DashboardVinculacion() {
     }
   };
 
+  const abrirDetallePostulacion = async (postulacion) => {
+    setDetalleTipo('postulacion');
+    setDetalle(null);
+    setDetalleLoading(true);
+    try {
+      const [alumnoRes, vacanteRes] = await Promise.all([
+        fetch(`${API_BASE}/admin/alumnos/${postulacion.id_estudiante}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE}/admin/vacantes/${postulacion.id_vacante}`, { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+      const alumnoJson = await alumnoRes.json();
+      const vacanteJson = await vacanteRes.json();
+      if (!alumnoRes.ok || !alumnoJson.ok) throw new Error(alumnoJson.mensaje || 'No se pudo cargar el estudiante.');
+      if (!vacanteRes.ok || !vacanteJson.ok) throw new Error(vacanteJson.mensaje || 'No se pudo cargar la vacante.');
+      setDetalle({ postulacion, alumno: alumnoJson.alumno, vacante: vacanteJson.vacante });
+    } catch (error) {
+      alert(error.message || 'No se pudo cargar el detalle de la postulación.');
+      setDetalleTipo('');
+    } finally {
+      setDetalleLoading(false);
+    }
+  };
+
   const cambiarEstadoEmpresa = async (id, nuevoEstado) => {
     if (!isVinculacion) return alert('Solo Vinculación puede cambiar el estado de empresas.');
     try {
@@ -374,7 +396,7 @@ export default function DashboardVinculacion() {
           <div className="nav-item" style={{ marginTop: 12, color: '#fca5a5' }} onClick={() => { localStorage.clear(); navigate('/'); }}>
             <span className="nav-icon"><AppIcon name="logout" /></span> Cerrar sesión
           </div>
-          <div className="sidebar-build">SkillMatch V3.1</div>
+          <div className="sidebar-build">SkillMatch V4.0</div>
         </div>
         <div className="sidebar-user">
           <div className="user-avatar">{initials(`${user.nombre || ''} ${user.apellido || ''}`)}</div>
@@ -455,8 +477,8 @@ export default function DashboardVinculacion() {
           )}
 
           {isVinculacion && view === 'postulaciones' && (
-            <Table title="Postulaciones" empty="No hay postulaciones" headers={['Alumno','Vacante','Empresa','Estado','Fecha']}>
-              {filtrarLista(postulaciones).map(p => <div className="table-row" key={p.id_postulacion} style={{ gridTemplateColumns: '2fr 1.7fr 1.5fr 1fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{p.foto_perfil ? <img alt="perfil" src={buildFileUrl(p.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(p.alumno)}</div>}<div><b>{p.alumno}</b><div style={{ fontSize: 12, color: '#64748b' }}>{p.carrera}</div></div></div><div>{p.vacante}</div><div>{p.empresa}</div><div>{p.estado}</div><div>{formatFecha(p.fecha_postulacion)}</div></div>)}
+            <Table title="Postulaciones" empty="No hay postulaciones" headers={['Alumno','Vacante','Empresa','Estado','Fecha','Acciones']}>
+              {filtrarLista(postulaciones).map(p => <div className="table-row" key={p.id_postulacion} style={{ gridTemplateColumns: '2fr 1.7fr 1.5fr 1fr 1fr 1fr' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{p.foto_perfil ? <img alt="perfil" src={buildFileUrl(p.foto_perfil)} style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: '50%' }} /> : <div className="user-avatar">{initials(p.alumno)}</div>}<div><b>{p.alumno}</b><div style={{ fontSize: 12, color: '#64748b' }}>{p.carrera}</div></div></div><div>{p.vacante}</div><div>{p.empresa}</div><div>{p.estado}</div><div>{formatFecha(p.fecha_postulacion)}</div><div><button className="btn btn-ghost" onClick={() => abrirDetallePostulacion(p)}>Ver detalle</button></div></div>)}
             </Table>
           )}
 
@@ -509,6 +531,7 @@ export default function DashboardVinculacion() {
             {detalle && detalleTipo === 'profesor' && <DetalleProfesor profesor={detalle} />}
             {detalle && detalleTipo === 'vacante' && <DetalleVacante vacante={detalle} puedeGestionar={detallePermisos.puedeGestionar && isVinculacion} cambiarEstadoVacante={cambiarEstadoVacante} />}
             {detalle && detalleTipo === 'proyecto' && <DetalleProyecto proyecto={detalle} />}
+            {detalle && detalleTipo === 'postulacion' && <DetallePostulacion data={detalle} />}
           </div>
         </div>
       )}
@@ -856,6 +879,18 @@ function DetalleProyecto({ proyecto }) {
     </section>
 
     {proyecto.colaboradores?.length > 0 && <section><h3>Colaboradores</h3>{proyecto.colaboradores.map((c, idx) => <div key={idx} className="table-row" style={{ gridTemplateColumns: '2fr 1fr 1fr' }}><div>{c.nombre} {c.apellido}</div><div>{c.correo}</div><div>{c.carrera}</div></div>)}</section>}
+  </div>;
+}
+
+function DetallePostulacion({ data }) {
+  const { postulacion, alumno, vacante } = data;
+  return <div className="postulation-detail">
+    <div className="admin-project-detail__hero"><div><span className="admin-project-detail__eyebrow">SEGUIMIENTO INSTITUCIONAL</span><h2>Detalle de postulación</h2><p>{postulacion.empresa} · {postulacion.vacante}</p></div><span className="badge badge-blue">{postulacion.estado}</span></div>
+    <div className="admin-project-facts"><div><small>Fecha</small><strong>{formatFecha(postulacion.fecha_postulacion)}</strong></div><div><small>Carrera</small><strong>{alumno.carrera || '—'}</strong></div><div><small>Cuatrimestre</small><strong>{alumno.semestre || '—'}</strong></div></div>
+    <section><h3>Estudiante</h3><p><b>{alumno.nombre} {alumno.apellido}</b><br/>{alumno.correo} · {alumno.telefono || 'Sin teléfono'}<br/>{alumno.titulo_profesional || alumno.carrera || 'Estudiante UTEQ'}</p></section>
+    <section><h3>Vacante</h3><p><b>{vacante.titulo}</b><br/>{vacante.descripcion || 'Sin descripción'}</p><p><b>Ubicación:</b> {vacante.ubicacion || vacante.empresa_ubicacion || '—'} · <b>Modalidad:</b> {vacante.modalidad || '—'}</p></section>
+    <section><h3>Compatibilidad y perfil</h3><p><b>Habilidades técnicas:</b> {alumno.competencias || 'No registradas'}<br/><b>Soft skills:</b> {alumno.soft_score ?? 'Sin evaluación'}{alumno.soft_score != null ? '%' : ''}<br/><b>Disponibilidad:</b> {alumno.disponibilidad || '—'}</p></section>
+    <section><h3>Proyectos del estudiante</h3>{alumno.proyectos?.length ? alumno.proyectos.slice(0,5).map(p => <div className="table-row" key={p.id_proyecto} style={{gridTemplateColumns:'2fr 1fr'}}><div>{p.titulo}</div><div>{p.estado}</div></div>) : <p>No tiene proyectos registrados.</p>}</section>
   </div>;
 }
 

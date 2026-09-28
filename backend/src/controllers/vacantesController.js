@@ -77,6 +77,45 @@ function calcularMatch(estudiante, skillsSolicitadas = []) {
   };
 }
 
+
+function normalizarListaCampo(value) {
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean).join(',');
+  if (!value) return null;
+  return String(value).split(',').map((v) => v.trim()).filter(Boolean).join(',');
+}
+
+function normalizarVacantePayload(body = {}) {
+  const numero = (value) => (value === '' || value === null || value === undefined ? null : Number(value));
+  return {
+    titulo: String(body.titulo || '').trim(),
+    categoria: body.categoria || null,
+    nivel: body.nivel || null,
+    descripcion: body.descripcion || null,
+    requisitos: body.requisitos || body.requisitos_obligatorios || null,
+    ubicacion: body.ubicacion || null,
+    modalidad: body.modalidad || null,
+    tipo_oportunidad: body.tipo_oportunidad || null,
+    horario: body.horario || null,
+    salario_min: numero(body.salario_min),
+    salario_max: numero(body.salario_max),
+    moneda: body.moneda || 'MXN',
+    mostrar_salario: body.mostrar_salario === true || body.mostrar_salario === 'true',
+    plazas: Math.max(1, numero(body.plazas) || 1),
+    fecha_limite: body.fecha_limite || null,
+    actividades: body.actividades || null,
+    responsabilidades: body.responsabilidades || null,
+    requisitos_obligatorios: body.requisitos_obligatorios || body.requisitos || null,
+    requisitos_deseables: body.requisitos_deseables || null,
+    tecnologias_requeridas: normalizarListaCampo(body.tecnologias_requeridas),
+    tecnologias_deseables: normalizarListaCampo(body.tecnologias_deseables),
+    habilidades_blandas: normalizarListaCampo(body.habilidades_blandas),
+    beneficios: body.beneficios || null,
+    experiencia: body.experiencia || null,
+    carrera_preferida: body.carrera_preferida || null,
+    estado: body.estado || 'abierta',
+  };
+}
+
 function filtrarPorNombre(estudiantes, nombreBuscado) {
   if (!nombreBuscado || !String(nombreBuscado).trim()) return estudiantes;
   return estudiantes.filter((e) => coincideNombreBusqueda(e.nombre_busqueda || e.nombre, nombreBuscado));
@@ -169,17 +208,14 @@ exports.getDashboardCompleto = async (req, res) => {
 
 exports.crearVacante = async (req, res) => {
   try {
-    const { titulo, categoria, nivel, descripcion, requisitos } = req.body;
-    if (!titulo || !descripcion) return res.status(400).json({ ok: false, mensaje: 'Título y descripción son obligatorios' });
+    const payload = normalizarVacantePayload(req.body);
+    if (!payload.titulo || !payload.descripcion) return res.status(400).json({ ok: false, mensaje: 'Título y descripción son obligatorios' });
+    if (!payload.tecnologias_requeridas) return res.status(400).json({ ok: false, mensaje: 'Selecciona al menos una tecnología requerida.' });
+    if (payload.salario_min !== null && payload.salario_max !== null && payload.salario_min > payload.salario_max) {
+      return res.status(400).json({ ok: false, mensaje: 'El salario mínimo no puede ser mayor al salario máximo.' });
+    }
 
-    const id_vacante = await Vacante.create({
-      id_empresa: req.usuario.id_usuario,
-      titulo,
-      categoria,
-      nivel,
-      descripcion,
-      requisitos
-    });
+    const id_vacante = await Vacante.create({ id_empresa: req.usuario.id_usuario, ...payload });
     const vacante = await Vacante.findById(id_vacante, req.usuario.id_usuario);
     return res.status(201).json({ ok: true, mensaje: 'Vacante publicada correctamente', vacante });
   } catch (error) {
@@ -205,15 +241,17 @@ exports.obtenerVacante = async (req, res) => {
 
 exports.actualizarVacante = async (req, res) => {
   try {
-    const { titulo, categoria, nivel, descripcion, requisitos, estado } = req.body;
-    if (!titulo || !descripcion) return res.status(400).json({ ok: false, mensaje: 'Título y descripción son obligatorios' });
-    if (!['abierta', 'pausada', 'cerrada'].includes(estado)) return res.status(400).json({ ok: false, mensaje: 'Estado inválido' });
+    const payload = normalizarVacantePayload(req.body);
+    if (!payload.titulo || !payload.descripcion) return res.status(400).json({ ok: false, mensaje: 'Título y descripción son obligatorios' });
+    if (!['abierta', 'pausada', 'cerrada'].includes(payload.estado)) return res.status(400).json({ ok: false, mensaje: 'Estado inválido' });
+    if (!payload.tecnologias_requeridas) return res.status(400).json({ ok: false, mensaje: 'Selecciona al menos una tecnología requerida.' });
 
-    const affected = await Vacante.update(req.params.id, req.usuario.id_usuario, { titulo, categoria, nivel, descripcion, requisitos, estado });
+    const affected = await Vacante.update(req.params.id, req.usuario.id_usuario, payload);
     if (!affected) return res.status(404).json({ ok: false, mensaje: 'Vacante no encontrada' });
     const vacante = await Vacante.findById(req.params.id, req.usuario.id_usuario);
     return res.json({ ok: true, mensaje: 'Vacante actualizada correctamente', vacante });
   } catch (error) {
+    console.error('Error al actualizar vacante:', error);
     return res.status(500).json({ ok: false, mensaje: 'Error al actualizar vacante' });
   }
 };

@@ -141,6 +141,9 @@ export default function DashboardEstudiante() {
   const [proyectos, setProyectos] = useState([]);
   const [evidencias, setEvidencias] = useState([]);
   const [vacantes, setVacantes] = useState([]); 
+  const [vacanteDetalle, setVacanteDetalle] = useState(null);
+  const [vacanteDetalleLoading, setVacanteDetalleLoading] = useState(false);
+  const [showVacanteDetalle, setShowVacanteDetalle] = useState(false);
   const [softQuestions, setSoftQuestions] = useState([]);
   const [softAnswers, setSoftAnswers] = useState({});
   const [softResult, setSoftResult] = useState(null);
@@ -1032,6 +1035,24 @@ export default function DashboardEstudiante() {
     }
   };
 
+  const abrirDetalleVacante = async (id_vacante) => {
+    setShowVacanteDetalle(true);
+    setVacanteDetalle(null);
+    setVacanteDetalleLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/estudiante/vacantes/${id_vacante}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.mensaje || 'No se pudo cargar la vacante.');
+      setVacanteDetalle(data.vacante);
+    } catch (error) {
+      setVacanteDetalle({ error: error.message });
+    } finally {
+      setVacanteDetalleLoading(false);
+    }
+  };
+
   const handlePostular = async (id_vacante) => {
     try {
       const res = await fetch(`${API_BASE}/estudiante/postulaciones`, {
@@ -1305,29 +1326,21 @@ export default function DashboardEstudiante() {
                         </div>
                         
                         <div className="vacante-tags">
-                          <span className="vacante-tag"><AppIcon name="briefcase" size={13} /> {v.categoria}</span>
-                          <span className="vacante-tag">⭐ Nivel: {v.nivel}</span>
-                          <span className="vacante-tag"><AppIcon name="calendar" size={13} /> {formatFecha(v.fecha_registro)}</span>
+                          <span className="vacante-tag"><AppIcon name="briefcase" size={13} /> {v.categoria || 'Área por definir'}</span>
+                          <span className="vacante-tag"><AppIcon name="map" size={13} /> {v.ubicacion || v.empresa_ubicacion || 'Ubicación por definir'}</span>
+                          <span className="vacante-tag"><AppIcon name="globe" size={13} /> {v.modalidad || 'Modalidad por definir'}</span>
                         </div>
 
-                        <div className="vacante-desc">
-                          {v.descripcion}
-                        </div>
+                        <div className="vacante-desc">{v.descripcion}</div>
+                        {v.tecnologias_requeridas && <div className="vacante-tech-preview">{String(v.tecnologias_requeridas).split(',').slice(0, 5).map((t) => <span key={t}>{t.trim()}</span>)}</div>}
 
-                        <div className="vacante-footer">
+                        <div className="vacante-footer vacancy-card-footer">
                           {v.estado_postulacion ? (
-                            <div style={{ width: "100%", textAlign: "center", padding: "10px", background: "var(--amber-bg)", color: "var(--amber)", border: "1px solid var(--amber-border)", borderRadius: "8px", fontSize: "13px", fontWeight: "700" }}>
-                              ⏳ {v.estado_postulacion === 'pendiente' ? 'Postulación enviada' : 'Postulación en proceso'}
-                            </div>
-                          ) : (
-                            <button 
-                              className="btn btn-primary" 
-                              style={{ width: "100%" }}
-                              onClick={() => handlePostular(v.id_vacante)}
-                            >
-                              Enviar mi perfil →
-                            </button>
-                          )}
+                            <div className="vacancy-applied"><AppIcon name="check" size={15} /> {v.estado_postulacion === 'pendiente' ? 'Postulación enviada' : `Estado: ${v.estado_postulacion}`}</div>
+                          ) : null}
+                          <button className="btn btn-primary" onClick={() => abrirDetalleVacante(v.id_vacante)}>
+                            Ver vacante completa <span>→</span>
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -1335,6 +1348,75 @@ export default function DashboardEstudiante() {
                 )}
               </div>
             </>
+          )}
+
+          {showVacanteDetalle && (
+            <div className="modal-overlay vacancy-detail-overlay" onClick={() => setShowVacanteDetalle(false)}>
+              <div className="vacancy-detail-modal" onClick={(e) => e.stopPropagation()}>
+                <button className="vacancy-detail-close" onClick={() => setShowVacanteDetalle(false)}>×</button>
+                {vacanteDetalleLoading ? (
+                  <div className="vacancy-detail-loading">Cargando oportunidad...</div>
+                ) : vacanteDetalle?.error ? (
+                  <div className="vacancy-detail-loading">{vacanteDetalle.error}</div>
+                ) : vacanteDetalle ? (
+                  <>
+                    <header className="vacancy-detail-hero">
+                      <div className="vacancy-company-logo">
+                        {vacanteDetalle.empresa_logo ? <img src={buildFileUrl(vacanteDetalle.empresa_logo)} alt={vacanteDetalle.empresa} /> : <AppIcon name="building" size={30} />}
+                      </div>
+                      <div className="vacancy-detail-hero-copy">
+                        <span className="vacancy-detail-eyebrow">OPORTUNIDAD PROFESIONAL</span>
+                        <h2>{vacanteDetalle.titulo}</h2>
+                        <button type="button" className="vacancy-company-link">{vacanteDetalle.empresa}</button>
+                        <div className="vacancy-detail-tags">
+                          <span><AppIcon name="map" size={14} /> {vacanteDetalle.ubicacion || vacanteDetalle.empresa_ubicacion || 'Ubicación por definir'}</span>
+                          <span><AppIcon name="globe" size={14} /> {vacanteDetalle.modalidad || 'Modalidad por definir'}</span>
+                          <span><AppIcon name="briefcase" size={14} /> {vacanteDetalle.tipo_oportunidad || vacanteDetalle.categoria || 'Oportunidad'}</span>
+                        </div>
+                      </div>
+                    </header>
+
+                    <div className="vacancy-detail-grid">
+                      <div className="vacancy-detail-main">
+                        <section><h3>Acerca de la oportunidad</h3><p>{vacanteDetalle.descripcion || 'La empresa no agregó una descripción.'}</p></section>
+                        {vacanteDetalle.actividades && <section><h3>Qué harás</h3><p>{vacanteDetalle.actividades}</p></section>}
+                        {vacanteDetalle.responsabilidades && <section><h3>Responsabilidades</h3><p>{vacanteDetalle.responsabilidades}</p></section>}
+                        <section>
+                          <h3>Perfil que busca la empresa</h3>
+                          <div className="vacancy-detail-columns">
+                            <div><strong>Requisitos obligatorios</strong><p>{vacanteDetalle.requisitos_obligatorios || vacanteDetalle.requisitos || 'No especificados.'}</p></div>
+                            <div><strong>Deseables</strong><p>{vacanteDetalle.requisitos_deseables || 'No especificados.'}</p></div>
+                          </div>
+                        </section>
+                        <section><h3>Tecnologías</h3><div className="vacancy-tech-groups"><div><strong>Requeridas</strong><div className="vacancy-chip-row">{String(vacanteDetalle.tecnologias_requeridas || '').split(',').filter(Boolean).map((t) => <span key={`r-${t}`}>{t.trim()}</span>)}</div></div><div><strong>Deseables</strong><div className="vacancy-chip-row muted">{String(vacanteDetalle.tecnologias_deseables || '').split(',').filter(Boolean).map((t) => <span key={`d-${t}`}>{t.trim()}</span>)}</div></div></div></section>
+                        {vacanteDetalle.beneficios && <section><h3>Beneficios y apoyos</h3><p>{vacanteDetalle.beneficios}</p></section>}
+                        <section className="vacancy-company-card">
+                          <div className="vacancy-company-card-head"><AppIcon name="building" size={20} /><div><span>CONOCE A LA EMPRESA</span><h3>{vacanteDetalle.empresa}</h3></div></div>
+                          <p>{vacanteDetalle.descripcion_empresa || 'Empresa validada por el área de Vinculación de la UTEQ.'}</p>
+                          <div className="vacancy-company-facts"><span><b>Giro:</b> {vacanteDetalle.giro || '—'}</span><span><b>Sector:</b> {vacanteDetalle.sector || '—'}</span><span><b>Tamaño:</b> {vacanteDetalle.tamano_empresa || '—'}</span><span><b>Ubicación:</b> {vacanteDetalle.empresa_ubicacion || '—'}</span></div>
+                          {vacanteDetalle.cultura_valores && <div><strong>Cultura y valores</strong><p>{vacanteDetalle.cultura_valores}</p></div>}
+                          {vacanteDetalle.sitio_web && <a href={vacanteDetalle.sitio_web} target="_blank" rel="noreferrer">Visitar sitio web ↗</a>}
+                        </section>
+                      </div>
+
+                      <aside className="vacancy-detail-side">
+                        <div className="vacancy-summary-card">
+                          <h3>Resumen</h3>
+                          <div><span>Nivel</span><strong>{vacanteDetalle.nivel || '—'}</strong></div>
+                          <div><span>Horario</span><strong>{vacanteDetalle.horario || 'Por definir'}</strong></div>
+                          <div><span>Experiencia</span><strong>{vacanteDetalle.experiencia || 'No especificada'}</strong></div>
+                          <div><span>Plazas</span><strong>{vacanteDetalle.plazas || 1}</strong></div>
+                          <div><span>Fecha límite</span><strong>{vacanteDetalle.fecha_limite ? formatFecha(vacanteDetalle.fecha_limite) : 'Sin fecha límite'}</strong></div>
+                          {vacanteDetalle.mostrar_salario && (vacanteDetalle.salario_min || vacanteDetalle.salario_max) && <div><span>Apoyo / salario</span><strong>${Number(vacanteDetalle.salario_min || 0).toLocaleString('es-MX')} - ${Number(vacanteDetalle.salario_max || vacanteDetalle.salario_min || 0).toLocaleString('es-MX')} {vacanteDetalle.moneda || 'MXN'}</strong></div>}
+                        </div>
+                        {vacanteDetalle.estado_postulacion ? <div className="vacancy-already-applied"><AppIcon name="check" size={18} /><div><strong>Ya te postulaste</strong><span>Estado: {vacanteDetalle.estado_postulacion}</span></div></div> : <button className="btn btn-primary vacancy-apply-button" onClick={async () => { await handlePostular(vacanteDetalle.id_vacante); setVacanteDetalle({...vacanteDetalle, estado_postulacion: 'pendiente'}); }}>Postularme a esta vacante →</button>}
+                        <p className="vacancy-privacy-note"><AppIcon name="shield" size={14} /> Tu perfil profesional será compartido con esta empresa al postularte.</p>
+                      </aside>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
           )}
 
           {view === 'subir' && (

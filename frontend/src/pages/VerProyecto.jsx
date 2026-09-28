@@ -22,6 +22,21 @@ function SafeImage({ src, alt, className = '' }) {
 }
 
 
+
+function SafeVideo({ src, type, className = '' }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <div className={`project-detail-image-fallback ${className}`.trim()}>
+        <AppIcon name="video" size={30} />
+        <strong>Video no disponible</strong>
+        <small>El archivo pudo haberse perdido en un despliegue anterior. Puedes volver a subirlo desde el perfil del proyecto.</small>
+      </div>
+    );
+  }
+  return <video className={className} src={src} controls playsInline preload="metadata" onError={() => setFailed(true)} />;
+}
+
 const inferEvidenceMime = (item = {}) => {
   if (item.mime_type) return String(item.mime_type).toLowerCase();
   const source = String(item.ruta_archivo || item.nombre_original || '').split('?')[0].toLowerCase();
@@ -254,10 +269,7 @@ export default function VerProyecto() {
                   {mediaProyecto.map((media) => (
                     <div className="project-detail-slide" key={media.id_media || media.ruta_archivo}>
                       {String(media.mime_type || '').startsWith('video/') || media.tipo === 'video' ? (
-                        <video controls preload="metadata">
-                          <source src={buildFileUrl(media.ruta_archivo)} type={media.mime_type || 'video/mp4'} />
-                          Tu navegador no soporta videos.
-                        </video>
+                        <SafeVideo src={buildFileUrl(media.ruta_archivo)} type={media.mime_type || 'video/mp4'} />
                       ) : (
                         <SafeImage src={buildFileUrl(media.ruta_archivo)} alt={`Galería de ${proyecto.titulo}`} />
                       )}
@@ -312,10 +324,7 @@ export default function VerProyecto() {
                   <div className="project-detail-video-grid">
                     {videos.map((video) => (
                       <article key={video.id_evidencia}>
-                        <video controls preload="metadata">
-                          <source src={buildFileUrl(video.ruta_archivo)} type={inferEvidenceMime(video) || 'video/mp4'} />
-                          Tu navegador no soporta videos.
-                        </video>
+                        <SafeVideo src={buildFileUrl(video.ruta_archivo)} type={inferEvidenceMime(video) || 'video/mp4'} />
                         <strong>{video.nombre_original || 'Video del proyecto'}</strong>
                       </article>
                     ))}

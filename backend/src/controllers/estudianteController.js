@@ -188,7 +188,8 @@ exports.getPerfilPublico = async (req, res) => {
 
     const [proyectosRows] = await db.query(`
       SELECT DISTINCT p.id_proyecto, p.titulo, p.descripcion, p.fecha_registro, p.estado,
-             p.img_principal, p.tecnologias, p.tipo, p.ambito, p.impacto
+             p.img_principal, p.tecnologias, p.area_trabajo, p.ambito_desarrollo,
+             p.competencia_impacto, p.es_innovacion, p.objetivo, p.actividades
       FROM proyectos p
       WHERE p.id_estudiante = ?
       ORDER BY p.fecha_registro DESC
@@ -379,6 +380,18 @@ exports.obtenerVacantes = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener vacantes:', error);
     return res.status(500).json({ ok: false, mensaje: 'Error al cargar las vacantes' });
+  }
+};
+
+exports.obtenerVacanteDetalle = async (req, res) => {
+  try {
+    const id_usuario = req.usuario.id_usuario;
+    const vacante = await Estudiante.getVacanteDetalle(id_usuario, req.params.id);
+    if (!vacante) return res.status(404).json({ ok: false, mensaje: 'Vacante no encontrada o ya no está disponible.' });
+    return res.json({ ok: true, vacante });
+  } catch (error) {
+    console.error('Error al obtener detalle de vacante:', error);
+    return res.status(500).json({ ok: false, mensaje: 'Error al cargar el detalle de la vacante.' });
   }
 };
 

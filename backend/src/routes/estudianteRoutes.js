@@ -41,6 +41,7 @@ router.delete('/evidencias/:id', verificarToken, evidenciaController.eliminarEvi
 // RUTAS DE VACANTES
 // ==========================================
 router.get('/vacantes', verificarToken, estudianteController.obtenerVacantes);
+router.get('/vacantes/:id', verificarToken, estudianteController.obtenerVacanteDetalle);
 router.post('/postulaciones', verificarToken, estudianteController.postularVacante);
 
 // ==========================================

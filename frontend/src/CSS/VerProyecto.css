@@ -1124,3 +1124,44 @@
   .project-detail-cover-card > img { min-height: 240px; }
   .project-detail-gallery-card .project-detail-carousel { grid-auto-columns: 88%; }
 }
+
+/* ==============================================================
+   SkillMatch V4 - detalle de proyecto compacto y galería estable
+   ============================================================== */
+.project-detail-shell { width: min(1180px, 100%); }
+.project-detail-layout { grid-template-columns: minmax(0, 1fr) 286px; gap: 22px; }
+.project-detail-cover-card { min-height: 0; aspect-ratio: 16 / 9; max-height: 520px; }
+.project-detail-cover-card .project-detail-cover,
+.project-detail-cover-card > img,
+.project-detail-cover-card > .project-detail-image-fallback {
+  width: 100%; height: 100%; min-height: 0; max-height: 520px; object-fit: contain; background: #edf3f8;
+}
+.project-detail-gallery-card { overflow: hidden; }
+.project-detail-gallery-card .project-detail-carousel {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row; gap: 14px; overflow: visible; padding-bottom: 0;
+}
+.project-detail-gallery-card .project-detail-slide {
+  min-width: 0; min-height: 220px; height: 250px; border: 1px solid #dce5ef; border-radius: 16px; overflow: hidden; background: #edf3f8;
+}
+.project-detail-gallery-card .project-detail-slide img,
+.project-detail-gallery-card .project-detail-slide video,
+.project-detail-gallery-card .project-detail-slide .project-detail-image-fallback {
+  width: 100%; height: 100%; min-height: 0; max-height: none; object-fit: contain; background: #0b1728;
+}
+.project-detail-gallery-card .project-detail-slide img { background: #edf3f8; }
+.project-detail-gallery-card .project-detail-swipe-note { display: none; }
+.project-detail-sidebar { top: 92px; }
+.project-detail-sidebar section { padding: 17px; }
+.project-detail-sidebar h2 { font-size: 16px; }
+.project-detail-image-grid img,
+.project-detail-video-grid video { object-fit: contain; }
+
+@media (max-width: 1020px) {
+  .project-detail-layout { grid-template-columns: 1fr; }
+  .project-detail-sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .project-detail-gallery-card .project-detail-carousel { grid-template-columns: 1fr; }
+  .project-detail-gallery-card .project-detail-slide { height: 230px; }
+  .project-detail-cover-card { aspect-ratio: 4 / 3; max-height: 420px; }
+}

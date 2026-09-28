@@ -1,0 +1,61 @@
+SKILLMATCH V4.0 - PASOS DE DESPLIEGUE
+=====================================
+
+1) BASE DE DATOS
+----------------
+Conectarse a PostgreSQL/Aiven y ejecutar:
+
+\i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/12_vacantes_empresas_v4.sql'
+
+Debe terminar con:
+Migracion 12 aplicada. Vacantes y empresas preparadas para SkillMatch V4.
+
+Si la migración 11 de V3 todavía no fue aplicada, ejecutar primero:
+\i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/11_media_evidencias_v3.sql'
+
+2) COPIAR V4 SOBRE EL REPOSITORIO
+---------------------------------
+Copiar backend/ y frontend/ de esta entrega sobre las carpetas equivalentes del repositorio.
+NO copiar un .env dentro de Git.
+
+3) COMPROBAR GIT
+----------------
+git status
+git add .
+git commit -m "SkillMatch V4 - vacantes empresa postulaciones y multimedia"
+git push origin main
+
+4) RENDER
+---------
+Esperar el deploy y abrir:
+https://skillmatchweb.onrender.com/api/public/version
+
+Debe responder:
+{
+  "ok": true,
+  "version": "4.0.0-vacantes-empresa-media",
+  "storage": "local" o "cloudinary"
+}
+
+5) CLOUDINARY (MUY RECOMENDADO)
+-------------------------------
+En Render > Environment configurar:
+CLOUDINARY_CLOUD_NAME
+CLOUDINARY_API_KEY
+CLOUDINARY_API_SECRET
+
+Después de redeploy, /api/public/version debe mostrar:
+"storage": "cloudinary"
+
+6) PRUEBAS FUNCIONALES
+----------------------
+- Empresa > Perfil: completar información empresarial nueva.
+- Empresa > Nueva vacante: crear una vacante seleccionando tecnologías.
+- Estudiante > Vacantes: abrir detalle completo ANTES de postularse.
+- Empresa > Vacante > Postulantes: abrir perfil del estudiante.
+- Vinculación > Postulaciones: usar Ver detalle.
+- Landing > Proyecto: validar portada, galería, videos y documentación.
+
+IMPORTANTE SOBRE ARCHIVOS VIEJOS
+--------------------------------
+Si una imagen/video antiguo fue eliminado del disco efímero de Render, el código no puede reconstruir sus bytes. No es necesario borrar el proyecto: vuelva a subir únicamente el archivo que falte una vez configurado Cloudinary.

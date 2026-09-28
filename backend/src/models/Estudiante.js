@@ -33,12 +33,24 @@ class Estudiante {
           v.titulo, 
           v.categoria, 
           v.nivel, 
-          v.descripcion, 
+          v.descripcion,
+          v.ubicacion,
+          v.modalidad,
+          v.tipo_oportunidad,
+          v.salario_min,
+          v.salario_max,
+          v.moneda,
+          v.mostrar_salario,
+          v.fecha_limite,
+          v.tecnologias_requeridas,
           v.fecha_registro,
           emp.razon_social AS empresa,
+          emp.ubicacion AS empresa_ubicacion,
+          u.foto_perfil AS empresa_logo,
           p.estado AS estado_postulacion
         FROM vacantes v
         JOIN empresas emp ON v.id_empresa = emp.id_empresa
+        JOIN usuarios u ON u.id_usuario = emp.id_empresa
         LEFT JOIN estudiantes est ON est.id_estudiante = ?
         LEFT JOIN postulaciones p ON p.id_vacante = v.id_vacante AND p.id_estudiante = est.id_estudiante
         WHERE v.estado = 'abierta' AND emp.estado = 'habilitada'
@@ -52,6 +64,37 @@ class Estudiante {
       }
       throw error;
     }
+  }
+
+  static async getVacanteDetalle(id_usuario, id_vacante) {
+    const [rows] = await db.query(`
+      SELECT
+        v.*,
+        emp.id_empresa,
+        emp.razon_social AS empresa,
+        emp.giro,
+        emp.sector,
+        emp.rfc,
+        emp.domicilio AS empresa_domicilio,
+        emp.ubicacion AS empresa_ubicacion,
+        emp.descripcion_empresa,
+        emp.sitio_web,
+        emp.tamano_empresa,
+        emp.anio_fundacion,
+        emp.linkedin AS empresa_linkedin,
+        emp.cultura_valores,
+        emp.beneficios_empresa,
+        emp.proceso_seleccion,
+        u.foto_perfil AS empresa_logo,
+        p.estado AS estado_postulacion
+      FROM vacantes v
+      JOIN empresas emp ON v.id_empresa = emp.id_empresa
+      JOIN usuarios u ON u.id_usuario = emp.id_empresa
+      LEFT JOIN postulaciones p ON p.id_vacante = v.id_vacante AND p.id_estudiante = ?
+      WHERE v.id_vacante = ? AND v.estado = 'abierta' AND emp.estado = 'habilitada'
+      LIMIT 1
+    `, [id_usuario, id_vacante]);
+    return rows[0] || null;
   }
 
   // Crear una nueva postulación

@@ -484,6 +484,17 @@ exports.actualizarMiPerfil = async (req, res) => {
       razon_social,
       giro,
       contacto,
+      domicilio,
+      ubicacion,
+      sector,
+      descripcion_empresa,
+      sitio_web,
+      tamano_empresa,
+      anio_fundacion,
+      linkedin,
+      cultura_valores,
+      beneficios_empresa,
+      proceso_seleccion,
       departamento,
       asignaturas
     } = req.body;
@@ -515,8 +526,18 @@ exports.actualizarMiPerfil = async (req, res) => {
 
     if (Number(usuarioActual.id_rol) === 3) {
       await conn.query(
-        `UPDATE empresas SET razon_social = ?, giro = ?, contacto = ? WHERE id_empresa = ?`,
-        [razon_social || null, giro || null, contacto || null, id_usuario]
+        `UPDATE empresas SET
+          razon_social = COALESCE(?, razon_social),
+          giro = ?, contacto = ?, domicilio = ?, ubicacion = ?, sector = ?,
+          descripcion_empresa = ?, sitio_web = ?, tamano_empresa = ?, anio_fundacion = ?,
+          linkedin = ?, cultura_valores = ?, beneficios_empresa = ?, proceso_seleccion = ?
+         WHERE id_empresa = ?`,
+        [
+          razon_social || null, giro || null, contacto || null, domicilio || null, ubicacion || null,
+          sector || null, descripcion_empresa || null, sitio_web || null, tamano_empresa || null,
+          anio_fundacion ? Number(anio_fundacion) : null, linkedin || null, cultura_valores || null,
+          beneficios_empresa || null, proceso_seleccion || null, id_usuario
+        ]
       );
     }
 

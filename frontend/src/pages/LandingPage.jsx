@@ -608,7 +608,7 @@ export default function LandingPage() {
           <div><strong>Legal</strong><button type="button" onClick={() => navigate('/terminos')}>Términos</button><button type="button" onClick={() => navigate('/privacidad')}>Privacidad</button><a href={whatsappUrl} target="_blank" rel="noreferrer">Contacto</a></div>
           <div className="footer-uteq"><span>En colaboración con</span><img src="/logos/uteq-logo.png" alt="UTEQ Universidad Líder" /></div>
         </div>
-        <div className="landing-footer__bottom">© 2026 SkillMatch · Querétaro, México · V3.1</div>
+        <div className="landing-footer__bottom">© 2026 SkillMatch · Querétaro, México · V4.0</div>
       </footer>
 
       {showAuthModal && (

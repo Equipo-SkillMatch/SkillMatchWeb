@@ -7,8 +7,15 @@ import AppIcon from '../components/AppIcon';
 
 // LISTA DE TECNOLOGÍAS PARA LAS BURBUJAS
 const TECH_OPTIONS = [
-  "React", "Node.js", "Python", "MySQL", "Java", "JavaScript", 
-  "PHP", "AWS", "Docker", "Figma", "Angular", "Vue", "C#", "Excel", "Scrum"
+  "React", "Node.js", "JavaScript", "TypeScript", "Python", "Java", "C#", "PHP", "Flutter", "Dart",
+  "Angular", "Vue", "Next.js", "Express", "Spring Boot", "Laravel", "MySQL", "PostgreSQL", "MongoDB",
+  "SQL Server", "Firebase", "AWS", "Azure", "Docker", "Kubernetes", "Git", "REST API", "GraphQL",
+  "HTML", "CSS", "Tailwind", "Figma", "Power BI", "Excel", "IoT", "Linux", "Cybersecurity"
+];
+
+const SOFT_SKILL_OPTIONS = [
+  "Comunicación", "Trabajo en equipo", "Resolución de problemas", "Adaptabilidad",
+  "Profesionalismo", "Liderazgo", "Organización", "Pensamiento crítico"
 ];
 
 export default function DashboardEmpresas() {
@@ -31,7 +38,12 @@ export default function DashboardEmpresas() {
   const [formError, setFormError] = useState("");
 
   const initialFormState = {
-    titulo: "", categoria: "Tecnología", nivel: "JUNIOR", descripcion: "", requisitos: "", estado: "abierta"
+    titulo: "", categoria: "Tecnología", nivel: "JUNIOR", descripcion: "", requisitos: "", estado: "abierta",
+    ubicacion: "", modalidad: "Presencial", tipo_oportunidad: "Estadía / Prácticas", horario: "",
+    salario_min: "", salario_max: "", moneda: "MXN", mostrar_salario: false, plazas: 1, fecha_limite: "",
+    actividades: "", responsabilidades: "", requisitos_obligatorios: "", requisitos_deseables: "",
+    tecnologias_requeridas: [], tecnologias_deseables: [], habilidades_blandas: [], beneficios: "",
+    experiencia: "Sin experiencia", carrera_preferida: ""
   };
   const [formVacante, setFormVacante] = useState(initialFormState);
 
@@ -40,7 +52,11 @@ export default function DashboardEmpresas() {
   const [postulantes, setPostulantes] = useState([]); 
   
   const [companyData, setCompanyData] = useState(null);
-  const [perfilForm, setPerfilForm] = useState({ nombre: '', apellido: '', telefono: '', razon_social: '', giro: '', contacto: '', nueva_password: '' });
+  const [perfilForm, setPerfilForm] = useState({
+    nombre: '', apellido: '', telefono: '', razon_social: '', giro: '', contacto: '', domicilio: '', ubicacion: '', sector: '',
+    descripcion_empresa: '', sitio_web: '', tamano_empresa: '', anio_fundacion: '', linkedin: '', cultura_valores: '',
+    beneficios_empresa: '', proceso_seleccion: '', nueva_password: ''
+  });
   const [perfilFoto, setPerfilFoto] = useState(null);
   const [showPerfilPass, setShowPerfilPass] = useState(false);
 
@@ -99,6 +115,17 @@ export default function DashboardEmpresas() {
           razon_social: json.empresa.razon_social || '',
           giro: json.empresa.giro || '',
           contacto: json.empresa.contacto || '',
+          domicilio: json.empresa.domicilio || '',
+          ubicacion: json.empresa.ubicacion || '',
+          sector: json.empresa.sector || '',
+          descripcion_empresa: json.empresa.descripcion_empresa || '',
+          sitio_web: json.empresa.sitio_web || '',
+          tamano_empresa: json.empresa.tamano_empresa || '',
+          anio_fundacion: json.empresa.anio_fundacion || '',
+          linkedin: json.empresa.linkedin || '',
+          cultura_valores: json.empresa.cultura_valores || '',
+          beneficios_empresa: json.empresa.beneficios_empresa || '',
+          proceso_seleccion: json.empresa.proceso_seleccion || '',
           nueva_password: ''
         });
       }
@@ -181,13 +208,23 @@ export default function DashboardEmpresas() {
       const json = await res.json();
       
       if (json.ok) {
+        const splitField = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean);
         setFormVacante({
-          titulo: json.vacante.titulo,
-          categoria: json.vacante.categoria,
-          nivel: json.vacante.nivel,
-          descripcion: json.vacante.descripcion,
-          requisitos: json.vacante.requisitos || "",
-          estado: json.vacante.estado
+          ...initialFormState,
+          ...json.vacante,
+          titulo: json.vacante.titulo || '',
+          categoria: json.vacante.categoria || 'Tecnología',
+          nivel: json.vacante.nivel || 'JUNIOR',
+          descripcion: json.vacante.descripcion || '',
+          requisitos: json.vacante.requisitos || '',
+          estado: json.vacante.estado || 'abierta',
+          salario_min: json.vacante.salario_min ?? '',
+          salario_max: json.vacante.salario_max ?? '',
+          plazas: json.vacante.plazas || 1,
+          fecha_limite: json.vacante.fecha_limite ? String(json.vacante.fecha_limite).slice(0, 10) : '',
+          tecnologias_requeridas: splitField(json.vacante.tecnologias_requeridas),
+          tecnologias_deseables: splitField(json.vacante.tecnologias_deseables),
+          habilidades_blandas: splitField(json.vacante.habilidades_blandas),
         });
       } else {
         setFormError("No se pudo cargar la info: " + json.mensaje);
@@ -264,6 +301,14 @@ export default function DashboardEmpresas() {
 
   const vacantesFiltradas = tabVacantes === "todas" ? vacantes : vacantes.filter((v) => v.estado.toLowerCase() === tabVacantes);
   const initials = (name) => name ? name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() : "UT";
+
+  const toggleVacanteList = (field, value) => {
+    setFormVacante((prev) => {
+      const current = Array.isArray(prev[field]) ? prev[field] : [];
+      return { ...prev, [field]: current.includes(value) ? current.filter((item) => item !== value) : [...current, value] };
+    });
+  };
+
 
   // LÓGICA DE BURBUJAS Y MATCH (BLINDADA)
   const toggleSkill = (skill) => {
@@ -738,15 +783,49 @@ export default function DashboardEmpresas() {
                      </div>
                    </div>
 
-                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "16px" }}>
-                     <div className="form-group"><label className="form-label">Foto de perfil</label><input className="form-input" type="file" accept=".jpg,.jpeg,.png,.webp" onChange={e => setPerfilFoto(e.target.files?.[0] || null)} /></div>
-                     <div className="form-group"><label className="form-label">Razón social</label><input className="form-input" value={perfilForm.razon_social} onChange={e => setPerfilForm({...perfilForm, razon_social: e.target.value})} /></div>
-                     <div className="form-group"><label className="form-label">Giro</label><input className="form-input" value={perfilForm.giro} onChange={e => setPerfilForm({...perfilForm, giro: e.target.value})} /></div>
-                     <div className="form-group"><label className="form-label">Contacto / RH</label><input className="form-input" value={perfilForm.contacto} onChange={e => setPerfilForm({...perfilForm, contacto: e.target.value})} /></div>
-                     <div className="form-group"><label className="form-label">Nombre responsable</label><input className="form-input" value={perfilForm.nombre} onChange={e => setPerfilForm({...perfilForm, nombre: e.target.value})} /></div>
-                     <div className="form-group"><label className="form-label">Apellido responsable</label><input className="form-input" value={perfilForm.apellido} onChange={e => setPerfilForm({...perfilForm, apellido: e.target.value})} /></div>
-                     <div className="form-group"><label className="form-label">Teléfono</label><input className="form-input" value={perfilForm.telefono} onChange={e => setPerfilForm({...perfilForm, telefono: e.target.value})} /></div>
-                     <div className="form-group"><label className="form-label">Nueva contraseña</label><div style={{ position: "relative" }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} placeholder="Opcional" value={perfilForm.nueva_password} onChange={e => setPerfilForm({...perfilForm, nueva_password: e.target.value})} /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}><AppIcon name={showPerfilPass ? 'eyeOff' : 'eye'} size={18} /></button></div></div>
+                   <div className="company-profile-sections">
+                     <section className="company-profile-section">
+                       <div className="company-profile-section-title"><AppIcon name="building" size={19} /><div><strong>Identidad de la empresa</strong><small>Información pública que ayuda al estudiante a conocer la organización.</small></div></div>
+                       <div className="company-profile-grid">
+                         <div className="form-group"><label className="form-label">Logo / foto</label><input className="form-input" type="file" accept=".jpg,.jpeg,.png,.webp" onChange={e => setPerfilFoto(e.target.files?.[0] || null)} /></div>
+                         <div className="form-group"><label className="form-label">Razón social</label><input className="form-input" value={perfilForm.razon_social} onChange={e => setPerfilForm({...perfilForm, razon_social: e.target.value})} /></div>
+                         <div className="form-group"><label className="form-label">Giro</label><input className="form-input" value={perfilForm.giro} onChange={e => setPerfilForm({...perfilForm, giro: e.target.value})} /></div>
+                         <div className="form-group"><label className="form-label">Sector</label><input className="form-input" value={perfilForm.sector} onChange={e => setPerfilForm({...perfilForm, sector: e.target.value})} /></div>
+                         <div className="form-group"><label className="form-label">Tamaño de empresa</label><select className="form-select" value={perfilForm.tamano_empresa} onChange={e => setPerfilForm({...perfilForm, tamano_empresa: e.target.value})}><option value="">No especificado</option><option>1-10 colaboradores</option><option>11-50 colaboradores</option><option>51-250 colaboradores</option><option>251-1000 colaboradores</option><option>Más de 1000 colaboradores</option></select></div>
+                         <div className="form-group"><label className="form-label">Año de fundación</label><input className="form-input" type="number" min="1900" max="2100" value={perfilForm.anio_fundacion} onChange={e => setPerfilForm({...perfilForm, anio_fundacion: e.target.value})} /></div>
+                         <div className="form-group company-profile-wide"><label className="form-label">Descripción de la empresa</label><textarea className="form-textarea" value={perfilForm.descripcion_empresa} onChange={e => setPerfilForm({...perfilForm, descripcion_empresa: e.target.value})} placeholder="Qué hace la empresa, industria, productos, servicios y tipo de talento que suele integrar." /></div>
+                       </div>
+                     </section>
+
+                     <section className="company-profile-section">
+                       <div className="company-profile-section-title"><AppIcon name="map" size={19} /><div><strong>Ubicación y presencia digital</strong><small>Datos visibles en el detalle de las vacantes.</small></div></div>
+                       <div className="company-profile-grid">
+                         <div className="form-group"><label className="form-label">Ubicación</label><input className="form-input" value={perfilForm.ubicacion} onChange={e => setPerfilForm({...perfilForm, ubicacion: e.target.value})} placeholder="Querétaro, Qro." /></div>
+                         <div className="form-group"><label className="form-label">Sitio web</label><input className="form-input" value={perfilForm.sitio_web} onChange={e => setPerfilForm({...perfilForm, sitio_web: e.target.value})} placeholder="https://..." /></div>
+                         <div className="form-group"><label className="form-label">LinkedIn</label><input className="form-input" value={perfilForm.linkedin} onChange={e => setPerfilForm({...perfilForm, linkedin: e.target.value})} placeholder="https://linkedin.com/company/..." /></div>
+                         <div className="form-group"><label className="form-label">Domicilio</label><input className="form-input" value={perfilForm.domicilio} onChange={e => setPerfilForm({...perfilForm, domicilio: e.target.value})} /></div>
+                       </div>
+                     </section>
+
+                     <section className="company-profile-section">
+                       <div className="company-profile-section-title"><AppIcon name="users" size={19} /><div><strong>Cultura y propuesta de valor</strong><small>Haz que el perfil explique por qué un estudiante querría trabajar aquí.</small></div></div>
+                       <div className="company-profile-grid">
+                         <div className="form-group company-profile-wide"><label className="form-label">Cultura y valores</label><textarea className="form-textarea" value={perfilForm.cultura_valores} onChange={e => setPerfilForm({...perfilForm, cultura_valores: e.target.value})} /></div>
+                         <div className="form-group company-profile-wide"><label className="form-label">Beneficios habituales</label><textarea className="form-textarea" value={perfilForm.beneficios_empresa} onChange={e => setPerfilForm({...perfilForm, beneficios_empresa: e.target.value})} /></div>
+                         <div className="form-group company-profile-wide"><label className="form-label">Proceso de selección</label><textarea className="form-textarea" value={perfilForm.proceso_seleccion} onChange={e => setPerfilForm({...perfilForm, proceso_seleccion: e.target.value})} placeholder="Ej. Revisión de perfil → entrevista RH → entrevista técnica → resultado." /></div>
+                       </div>
+                     </section>
+
+                     <section className="company-profile-section">
+                       <div className="company-profile-section-title"><AppIcon name="user" size={19} /><div><strong>Contacto responsable</strong><small>Información de la persona que gestiona la cuenta.</small></div></div>
+                       <div className="company-profile-grid">
+                         <div className="form-group"><label className="form-label">Contacto / RH</label><input className="form-input" value={perfilForm.contacto} onChange={e => setPerfilForm({...perfilForm, contacto: e.target.value})} /></div>
+                         <div className="form-group"><label className="form-label">Nombre responsable</label><input className="form-input" value={perfilForm.nombre} onChange={e => setPerfilForm({...perfilForm, nombre: e.target.value})} /></div>
+                         <div className="form-group"><label className="form-label">Apellido responsable</label><input className="form-input" value={perfilForm.apellido} onChange={e => setPerfilForm({...perfilForm, apellido: e.target.value})} /></div>
+                         <div className="form-group"><label className="form-label">Teléfono</label><input className="form-input" value={perfilForm.telefono} onChange={e => setPerfilForm({...perfilForm, telefono: e.target.value})} /></div>
+                         <div className="form-group"><label className="form-label">Nueva contraseña</label><div style={{ position: "relative" }}><input className="form-input" type={showPerfilPass ? 'text' : 'password'} minLength={8} placeholder="Opcional" value={perfilForm.nueva_password} onChange={e => setPerfilForm({...perfilForm, nueva_password: e.target.value})} /><button type="button" onClick={() => setShowPerfilPass(!showPerfilPass)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', cursor: 'pointer' }}><AppIcon name={showPerfilPass ? 'eyeOff' : 'eye'} size={18} /></button></div></div>
+                       </div>
+                     </section>
                    </div>
                    <div style={{ marginTop: "24px", display: "flex", gap: "12px" }}>
                      <button className="btn btn-primary" type="submit">Guardar cambios</button>
@@ -771,52 +850,55 @@ export default function DashboardEmpresas() {
               <div style={{textAlign:"center", padding:"40px"}}>Cargando información de la vacante...</div>
             ) : (
               <>
-                <div className="form-group">
-                  <label className="form-label">Título del puesto</label>
-                  <input className="form-input" value={formVacante.titulo} onChange={(e) => setFormVacante({...formVacante, titulo: e.target.value})} />
-                </div>
-                <div className="form-row">
+                <div className="vacancy-form-section">
+                  <div className="vacancy-form-heading"><span>01</span><div><strong>Información general</strong><small>Datos principales que verá el estudiante.</small></div></div>
                   <div className="form-group">
-                    <label className="form-label">Área</label>
-                    <select className="form-select" value={formVacante.categoria} onChange={(e) => setFormVacante({...formVacante, categoria: e.target.value})}>
-                      <option value="Tecnología">Tecnología</option>
-                      <option value="Diseño">Diseño</option>
-                      <option value="Administración">Administración</option>
-                      <option value="Finanzas">Finanzas</option>
-                    </select>
+                    <label className="form-label">Título del puesto *</label>
+                    <input className="form-input" value={formVacante.titulo} onChange={(e) => setFormVacante({...formVacante, titulo: e.target.value})} placeholder="Ej. Desarrollador Full Stack Jr." />
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Nivel</label>
-                    <select className="form-select" value={formVacante.nivel} onChange={(e) => setFormVacante({...formVacante, nivel: e.target.value})}>
-                      <option value="JUNIOR">Junior</option>
-                      <option value="SEMI-SENIOR">Semi-Senior</option>
-                      <option value="SENIOR">Senior</option>
-                      <option value="LEAD">Lead</option>
-                    </select>
+                  <div className="form-row">
+                    <div className="form-group"><label className="form-label">Área</label><select className="form-select" value={formVacante.categoria} onChange={(e) => setFormVacante({...formVacante, categoria: e.target.value})}><option>Tecnología</option><option>Diseño</option><option>Administración</option><option>Finanzas</option><option>Manufactura</option><option>Calidad</option><option>Comercial</option><option>Recursos Humanos</option></select></div>
+                    <div className="form-group"><label className="form-label">Nivel</label><select className="form-select" value={formVacante.nivel} onChange={(e) => setFormVacante({...formVacante, nivel: e.target.value})}><option value="TRAINEE">Trainee / Becario</option><option value="JUNIOR">Junior</option><option value="SEMI-SENIOR">Semi-Senior</option><option value="SENIOR">Senior</option></select></div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group"><label className="form-label">Tipo de oportunidad</label><select className="form-select" value={formVacante.tipo_oportunidad} onChange={(e) => setFormVacante({...formVacante, tipo_oportunidad: e.target.value})}><option>Estadía / Prácticas</option><option>Empleo de medio tiempo</option><option>Empleo de tiempo completo</option><option>Proyecto temporal</option><option>Servicio social</option></select></div>
+                    <div className="form-group"><label className="form-label">Modalidad</label><select className="form-select" value={formVacante.modalidad} onChange={(e) => setFormVacante({...formVacante, modalidad: e.target.value})}><option>Presencial</option><option>Híbrida</option><option>Remota</option></select></div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group"><label className="form-label">Ubicación</label><input className="form-input" value={formVacante.ubicacion} onChange={(e) => setFormVacante({...formVacante, ubicacion: e.target.value})} placeholder="Querétaro, Qro." /></div>
+                    <div className="form-group"><label className="form-label">Horario</label><input className="form-input" value={formVacante.horario} onChange={(e) => setFormVacante({...formVacante, horario: e.target.value})} placeholder="L-V 8:00 a 14:00" /></div>
                   </div>
                 </div>
 
-                {editingId && (
-                  <div className="form-group">
-                    <label className="form-label">Estado de la vacante</label>
-                    <select className="form-select" value={formVacante.estado} onChange={(e) => setFormVacante({...formVacante, estado: e.target.value})}>
-                      <option value="abierta">Activa</option>
-                      <option value="pausada">Pausada</option>
-                      <option value="cerrada">Cerrada</option>
-                    </select>
+                <div className="vacancy-form-section">
+                  <div className="vacancy-form-heading"><span>02</span><div><strong>Qué hará el candidato</strong><small>Explica la oportunidad con suficiente contexto.</small></div></div>
+                  <div className="form-group"><label className="form-label">Descripción de la vacante *</label><textarea className="form-textarea" value={formVacante.descripcion} onChange={(e) => setFormVacante({...formVacante, descripcion: e.target.value})} placeholder="Resume el propósito del puesto y el equipo al que se integrará." /></div>
+                  <div className="form-group"><label className="form-label">Actividades principales</label><textarea className="form-textarea" value={formVacante.actividades} onChange={(e) => setFormVacante({...formVacante, actividades: e.target.value})} placeholder="Ej. Desarrollo de módulos, pruebas, documentación, participación en reuniones..." /></div>
+                  <div className="form-group"><label className="form-label">Responsabilidades</label><textarea className="form-textarea" value={formVacante.responsabilidades} onChange={(e) => setFormVacante({...formVacante, responsabilidades: e.target.value})} placeholder="Responsabilidades y resultados esperados." /></div>
+                </div>
+
+                <div className="vacancy-form-section">
+                  <div className="vacancy-form-heading"><span>03</span><div><strong>Perfil buscado</strong><small>Selecciona tecnologías; no es necesario escribirlas manualmente.</small></div></div>
+                  <div className="form-group"><label className="form-label">Tecnologías requeridas *</label><div className="skill-picker">{TECH_OPTIONS.map((tech) => <button type="button" key={`req-${tech}`} className={formVacante.tecnologias_requeridas.includes(tech) ? 'skill-choice active' : 'skill-choice'} onClick={() => toggleVacanteList('tecnologias_requeridas', tech)}>{tech}</button>)}</div></div>
+                  <div className="form-group"><label className="form-label">Tecnologías deseables</label><div className="skill-picker">{TECH_OPTIONS.map((tech) => <button type="button" key={`des-${tech}`} className={formVacante.tecnologias_deseables.includes(tech) ? 'skill-choice active' : 'skill-choice'} onClick={() => toggleVacanteList('tecnologias_deseables', tech)}>{tech}</button>)}</div></div>
+                  <div className="form-group"><label className="form-label">Habilidades blandas prioritarias</label><div className="skill-picker">{SOFT_SKILL_OPTIONS.map((skill) => <button type="button" key={skill} className={formVacante.habilidades_blandas.includes(skill) ? 'skill-choice active' : 'skill-choice'} onClick={() => toggleVacanteList('habilidades_blandas', skill)}>{skill}</button>)}</div></div>
+                  <div className="form-row">
+                    <div className="form-group"><label className="form-label">Experiencia</label><select className="form-select" value={formVacante.experiencia} onChange={(e) => setFormVacante({...formVacante, experiencia: e.target.value})}><option>Sin experiencia</option><option>Proyectos académicos</option><option>6 meses</option><option>1 año</option><option>2 años o más</option></select></div>
+                    <div className="form-group"><label className="form-label">Carrera preferida</label><input className="form-input" value={formVacante.carrera_preferida} onChange={(e) => setFormVacante({...formVacante, carrera_preferida: e.target.value})} placeholder="Ej. Desarrollo de Software" /></div>
                   </div>
-                )}
-
-                <div className="form-group">
-                  <label className="form-label">Descripción</label>
-                  <textarea className="form-textarea" value={formVacante.descripcion} onChange={(e) => setFormVacante({...formVacante, descripcion: e.target.value})} />
+                  <div className="form-group"><label className="form-label">Requisitos obligatorios</label><textarea className="form-textarea" value={formVacante.requisitos_obligatorios} onChange={(e) => setFormVacante({...formVacante, requisitos_obligatorios: e.target.value, requisitos: e.target.value})} /></div>
+                  <div className="form-group"><label className="form-label">Requisitos deseables</label><textarea className="form-textarea" value={formVacante.requisitos_deseables} onChange={(e) => setFormVacante({...formVacante, requisitos_deseables: e.target.value})} /></div>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Requisitos</label>
-                  <textarea className="form-textarea" value={formVacante.requisitos} onChange={(e) => setFormVacante({...formVacante, requisitos: e.target.value})} />
+                <div className="vacancy-form-section">
+                  <div className="vacancy-form-heading"><span>04</span><div><strong>Condiciones y beneficios</strong><small>Información que ayuda al estudiante a decidir antes de postularse.</small></div></div>
+                  <div className="form-row"><div className="form-group"><label className="form-label">Salario / apoyo mínimo</label><input type="number" min="0" className="form-input" value={formVacante.salario_min} onChange={(e) => setFormVacante({...formVacante, salario_min: e.target.value})} /></div><div className="form-group"><label className="form-label">Salario / apoyo máximo</label><input type="number" min="0" className="form-input" value={formVacante.salario_max} onChange={(e) => setFormVacante({...formVacante, salario_max: e.target.value})} /></div></div>
+                  <div className="form-row"><div className="form-group"><label className="form-label">Plazas</label><input type="number" min="1" className="form-input" value={formVacante.plazas} onChange={(e) => setFormVacante({...formVacante, plazas: e.target.value})} /></div><div className="form-group"><label className="form-label">Fecha límite</label><input type="date" className="form-input" value={formVacante.fecha_limite} onChange={(e) => setFormVacante({...formVacante, fecha_limite: e.target.value})} /></div></div>
+                  <label className="check-row"><input type="checkbox" checked={Boolean(formVacante.mostrar_salario)} onChange={(e) => setFormVacante({...formVacante, mostrar_salario: e.target.checked})} /><span>Mostrar el rango de salario/apoyo a los estudiantes</span></label>
+                  <div className="form-group"><label className="form-label">Beneficios / prestaciones / apoyos</label><textarea className="form-textarea" value={formVacante.beneficios} onChange={(e) => setFormVacante({...formVacante, beneficios: e.target.value})} placeholder="Ej. comedor, transporte, capacitación, horario flexible..." /></div>
+                  {editingId && <div className="form-group"><label className="form-label">Estado de la vacante</label><select className="form-select" value={formVacante.estado} onChange={(e) => setFormVacante({...formVacante, estado: e.target.value})}><option value="abierta">Activa</option><option value="pausada">Pausada</option><option value="cerrada">Cerrada</option></select></div>}
                 </div>
-                
+
                 <div className="modal-actions">
                   <button className="btn btn-ghost" onClick={() => setShowModalForm(false)}>Cancelar</button>
                   <button className="btn btn-primary" onClick={guardarVacante} disabled={savingVacante}>
@@ -849,34 +931,46 @@ export default function DashboardEmpresas() {
             </div>
 
             <div className="modal-wide-body">
-              <div className="modal-col-left">
-                <div style={{fontSize: "13px", fontWeight: "700", color: "var(--primary)", textTransform: "uppercase", marginBottom: "10px"}}>
-                  Descripción del Puesto
-                </div>
-                <div className="vacante-detalle-text">
-                  {selectedVacante.descripcion || <span style={{color:"var(--muted)"}}>Cargando descripción...</span>}
+              <div className="modal-col-left vacancy-company-detail">
+                <div className="vacancy-view-facts">
+                  <span><AppIcon name="map" size={15} />{selectedVacante.ubicacion || 'Ubicación por definir'}</span>
+                  <span><AppIcon name="globe" size={15} />{selectedVacante.modalidad || 'Modalidad por definir'}</span>
+                  <span><AppIcon name="briefcase" size={15} />{selectedVacante.tipo_oportunidad || selectedVacante.categoria || 'Oportunidad'}</span>
+                  <span><AppIcon name="clock" size={15} />{selectedVacante.horario || 'Horario por definir'}</span>
                 </div>
 
-                {selectedVacante.requisitos && (
-                  <>
-                    <div style={{fontSize: "13px", fontWeight: "700", color: "var(--primary)", textTransform: "uppercase", marginBottom: "10px"}}>
-                      Requisitos
-                    </div>
-                    <div className="vacante-detalle-text">
-                      {selectedVacante.requisitos}
-                    </div>
-                  </>
-                )}
+                <section className="vacancy-view-section">
+                  <h3>Descripción del puesto</h3>
+                  <p>{selectedVacante.descripcion || 'Sin descripción registrada.'}</p>
+                </section>
 
-                <div style={{marginTop: "30px", borderTop: "1px solid var(--border)", paddingTop: "20px"}}>
-                  <button 
-                    className="btn btn-ghost" 
-                    onClick={() => {
-                      setShowViewModal(false); 
-                      abrirModalEditar(selectedVacante.id_vacante); 
-                    }}
-                  >
-                    ✎ Editar esta vacante
+                {selectedVacante.actividades && <section className="vacancy-view-section"><h3>Actividades principales</h3><p>{selectedVacante.actividades}</p></section>}
+                {selectedVacante.responsabilidades && <section className="vacancy-view-section"><h3>Responsabilidades</h3><p>{selectedVacante.responsabilidades}</p></section>}
+
+                <section className="vacancy-view-section">
+                  <h3>Perfil buscado</h3>
+                  <div className="vacancy-view-two-cols">
+                    <div><strong>Requisitos obligatorios</strong><p>{selectedVacante.requisitos_obligatorios || selectedVacante.requisitos || 'No especificados.'}</p></div>
+                    <div><strong>Deseables</strong><p>{selectedVacante.requisitos_deseables || 'No especificados.'}</p></div>
+                  </div>
+                  <div className="vacancy-view-skill-block"><strong>Tecnologías requeridas</strong><div className="vacancy-view-chips">{String(selectedVacante.tecnologias_requeridas || '').split(',').map(v => v.trim()).filter(Boolean).map(v => <span key={`vr-${v}`}>{v}</span>)}</div></div>
+                  {selectedVacante.tecnologias_deseables && <div className="vacancy-view-skill-block"><strong>Tecnologías deseables</strong><div className="vacancy-view-chips muted">{String(selectedVacante.tecnologias_deseables || '').split(',').map(v => v.trim()).filter(Boolean).map(v => <span key={`vd-${v}`}>{v}</span>)}</div></div>}
+                </section>
+
+                <section className="vacancy-view-section">
+                  <h3>Condiciones</h3>
+                  <div className="vacancy-view-two-cols compact">
+                    <div><strong>Experiencia</strong><p>{selectedVacante.experiencia || 'No especificada'}</p></div>
+                    <div><strong>Plazas</strong><p>{selectedVacante.plazas || 1}</p></div>
+                    <div><strong>Fecha límite</strong><p>{selectedVacante.fecha_limite ? formatearFecha(selectedVacante.fecha_limite) : 'Sin fecha límite'}</p></div>
+                    <div><strong>Apoyo / salario</strong><p>{selectedVacante.mostrar_salario && (selectedVacante.salario_min || selectedVacante.salario_max) ? `$${Number(selectedVacante.salario_min || 0).toLocaleString('es-MX')} - $${Number(selectedVacante.salario_max || selectedVacante.salario_min || 0).toLocaleString('es-MX')} ${selectedVacante.moneda || 'MXN'}` : 'No publicado'}</p></div>
+                  </div>
+                  {selectedVacante.beneficios && <div className="vacante-detalle-text"><b>Beneficios:</b> {selectedVacante.beneficios}</div>}
+                </section>
+
+                <div style={{marginTop: "24px", borderTop: "1px solid var(--border)", paddingTop: "18px"}}>
+                  <button className="btn btn-ghost" onClick={() => { setShowViewModal(false); abrirModalEditar(selectedVacante.id_vacante); }}>
+                    <AppIcon name="edit" size={16} /> Editar esta vacante
                   </button>
                 </div>
               </div>
@@ -893,7 +987,7 @@ export default function DashboardEmpresas() {
                   {postulantes.length > 0 ? (
                     postulantes.map((p) => (
                       <div className="alumno-mini-card" key={`post-${p.id_usuario || p.id}`}>
-                        <div className="al-mini-avatar">{initials(p.nombre)}</div>
+                        <div className="al-mini-avatar">{p.foto_perfil ? <img src={buildFileUrl(p.foto_perfil)} alt={p.nombre} /> : initials(p.nombre)}</div>
                         <div className="al-mini-info">
                           <div className="al-mini-name">{p.nombre}</div>
                           <div className="al-mini-carrera">{p.carrera}</div>
@@ -913,7 +1007,7 @@ export default function DashboardEmpresas() {
                             title="Aceptar Alumno"
                             onClick={() => handleAceptarAlumno(p.id_postulacion, p.nombre)}
                           >
-                            ✓
+                            <AppIcon name="check" size={16} />
                           </button>
                         </div>
                       </div>

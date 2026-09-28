@@ -223,3 +223,43 @@ body {
   .topbar-actions { width: 100%; justify-content: flex-end; }
   .topbar-title { font-size: 16px; }
 }
+/* ==============================================================
+   SkillMatch V4 - vacantes y perfil empresarial profesional
+   ============================================================== */
+.modal:has(.vacancy-form-section) { max-width: 860px; }
+.vacancy-form-section { padding:18px 0; border-top:1px solid #edf1f5; }
+.vacancy-form-section:first-of-type { border-top:0; padding-top:0; }
+.vacancy-form-heading { display:flex; gap:11px; align-items:flex-start; margin-bottom:16px; }
+.vacancy-form-heading > span { width:32px; height:32px; flex:0 0 32px; display:grid; place-items:center; border-radius:10px; background:#0b315a; color:#fff; font-size:9px; font-weight:900; }
+.vacancy-form-heading > div { display:grid; gap:3px; }
+.vacancy-form-heading strong { color:#102a46; font-size:14px; }
+.vacancy-form-heading small { color:#7a8a9b; font-size:10px; line-height:1.45; }
+.skill-picker { display:flex; flex-wrap:wrap; gap:7px; max-height:145px; overflow:auto; padding:2px; }
+.skill-choice { padding:7px 9px; border:1px solid #d8e3ed; border-radius:9px; background:#f8fafc; color:#4b6075; font:inherit; font-size:10px; font-weight:800; cursor:pointer; }
+.skill-choice.active { border-color:#8cc8e9; background:#e9f7ff; color:#086ba6; box-shadow:0 0 0 2px rgba(36,162,228,.08); }
+.check-row { display:flex; align-items:center; gap:9px; margin:2px 0 16px; color:#55697e; font-size:11px; font-weight:700; }
+.company-profile-sections { display:grid; gap:18px; }
+.company-profile-section { padding:20px; border:1px solid #e2e8f0; border-radius:16px; background:#fbfdff; }
+.company-profile-section-title { display:flex; align-items:flex-start; gap:10px; margin-bottom:16px; color:#0b4e86; }
+.company-profile-section-title > div { display:grid; gap:3px; }
+.company-profile-section-title strong { color:#102a46; font-size:14px; }
+.company-profile-section-title small { color:#718296; font-size:10px; line-height:1.5; }
+.company-profile-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.company-profile-wide { grid-column:1 / -1; }
+@media(max-width:720px){.company-profile-grid{grid-template-columns:1fr}.company-profile-wide{grid-column:auto}}
+.vacancy-company-detail { display:grid; gap:14px; }
+.vacancy-view-facts { display:flex; flex-wrap:wrap; gap:8px; }
+.vacancy-view-facts span { display:inline-flex; align-items:center; gap:6px; padding:7px 9px; border:1px solid #dce6ef; border-radius:999px; background:#f8fbfd; color:#536a80; font-size:10px; font-weight:800; }
+.vacancy-view-section { padding:17px 18px; border:1px solid #e1e8ef; border-radius:14px; background:#fff; }
+.vacancy-view-section h3 { margin:0 0 10px; color:#0b315a; font-size:14px; }
+.vacancy-view-section p { margin:0; color:#526579; font-size:12px; line-height:1.65; white-space:pre-line; }
+.vacancy-view-two-cols { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.vacancy-view-two-cols > div { padding:12px; border-radius:10px; background:#f8fafc; border:1px solid #e7edf3; }
+.vacancy-view-two-cols strong,.vacancy-view-skill-block>strong { display:block; margin-bottom:6px; color:#385069; font-size:10px; }
+.vacancy-view-two-cols.compact { grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:12px; }
+.vacancy-view-skill-block { margin-top:12px; }
+.vacancy-view-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.vacancy-view-chips span { padding:5px 8px; border-radius:8px; background:#eaf6fd; border:1px solid #cfe5f4; color:#126795; font-size:9px; font-weight:800; }
+.vacancy-view-chips.muted span { background:#f7f9fb; border-color:#e2e8ef; color:#657689; }
+.al-mini-avatar img { width:100%; height:100%; object-fit:cover; border-radius:inherit; display:block; }
+@media(max-width:720px){.vacancy-view-two-cols,.vacancy-view-two-cols.compact{grid-template-columns:1fr}}

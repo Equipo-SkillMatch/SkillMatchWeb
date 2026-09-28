@@ -69,3 +69,15 @@
   .student-profile-aside { position:static; }
   .student-skill-groups, .student-fact-grid { grid-template-columns:1fr; }
 }
+
+/* SkillMatch V4 - legibilidad para empresa/admin */
+.student-profile-main { gap: 24px; }
+.student-section { padding: 30px 32px; }
+.student-about > p { font-size: 15px; line-height: 1.85; color: #465a70; }
+.student-fact-grid strong { font-size: 14px; line-height: 1.45; }
+.student-chips span { font-size: 11px; padding: 7px 10px; }
+.student-soft-grid span { font-size: 11px; line-height: 1.4; min-height: 30px; }
+.student-project-body p { font-size: 13px; line-height: 1.65; }
+.student-contact-list > div { font-size: 13px; line-height: 1.5; }
+.student-profile-aside h1 { font-size: 24px; line-height: 1.3; }
+@media(max-width:860px){.student-section{padding:22px}}
