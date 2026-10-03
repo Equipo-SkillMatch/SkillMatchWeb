@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '4.0.0-vacantes-empresa-media';
+const APP_VERSION = '5.0.0-estadias-expediente';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);

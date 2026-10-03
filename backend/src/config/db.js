@@ -54,6 +54,18 @@ const INSERT_RETURNING_COLUMNS = {
   proyecto_media: 'id_media',
   soft_skills_preguntas: 'id_pregunta',
   soft_skills_resultados: 'id_resultado',
+  periodos_estadia: 'id_periodo',
+  guias_estadia: 'id_guia',
+  rubricas_estadia: 'id_rubrica',
+  rubrica_criterios_estadia: 'id_criterio',
+  talleres_estadia: 'id_taller',
+  grupos_estadia: 'id_grupo',
+  fechas_avances_estadia: 'id_fecha_avance',
+  estadias: 'id_estadia',
+  expedientes_estadia: 'id_expediente',
+  seguros_facultativos: 'id_seguro',
+  entregas_avances_estadia: 'id_entrega',
+  revisiones_avances_estadia: 'id_revision',
 };
 
 function normalizePostgresError(error) {

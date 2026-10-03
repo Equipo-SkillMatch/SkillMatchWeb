@@ -243,8 +243,8 @@ exports.register = async (req, res) => {
       return res.status(400).json({ ok: false, mensaje: 'Todos los campos obligatorios deben enviarse' });
     }
 
-    if ([1, 5].includes(Number(id_rol))) {
-      return res.status(403).json({ ok: false, mensaje: 'Los roles administrativos no se pueden registrar desde el formulario público.' });
+    if ([1, 5, 6].includes(Number(id_rol))) {
+      return res.status(403).json({ ok: false, mensaje: 'Los roles administrativos e institucionales no se pueden registrar desde el formulario público.' });
     }
 
     const usuarioExistente = await Usuario.findByCorreo(correo);

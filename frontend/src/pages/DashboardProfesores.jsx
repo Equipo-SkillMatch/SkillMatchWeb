@@ -418,6 +418,9 @@ export default function DashboardProfesores() {
             <span className="icon"><AppIcon name="dashboard" /></span> Dashboard
           </div>
           
+          <div className="nav-item" onClick={() => navigate('/estadias')}>
+            <span className="nav-icon"><AppIcon name="graduation" /></span> Estadías
+          </div>
           <div className={`nav-item ${view === 'horarios' ? 'active' : ''}`} onClick={() => handleNavClick('horarios')}>
             <span className="icon"><AppIcon name="calendar" /></span> Mi horario
           </div>

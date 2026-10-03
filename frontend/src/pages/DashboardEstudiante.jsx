@@ -1110,6 +1110,9 @@ export default function DashboardEstudiante() {
               <span className="nav-icon"><AppIcon name="dashboard" /></span> Dashboard
             </div>
             
+            <div className="nav-item" onClick={() => navigate('/estadias')}>
+              <span className="nav-icon"><AppIcon name="graduation" /></span> Mi estadía
+            </div>
             <div className={`nav-item ${view === 'vacantes' ? 'active' : ''}`} onClick={() => handleNavClick('vacantes')}>
               <span className="nav-icon"><AppIcon name="briefcase" /></span> Bolsa de Trabajo
             </div>

@@ -55,7 +55,7 @@ export default function Login() {
     if (role === '3') navigate('/dashboard-empresa');
     else if (role === '4') navigate('/dashboard-profesores');
     else if (role === '1' || role === '5') navigate('/dashboard-vinculacion');
-    else if (role === '6') navigate('/');
+    else if (role === '6') navigate('/estadias');
     else navigate('/dashboard-estudiante');
   };
 

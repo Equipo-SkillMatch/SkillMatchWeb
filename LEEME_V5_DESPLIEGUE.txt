@@ -1,0 +1,58 @@
+SKILLMATCH V5.0 — DESPLIEGUE
+============================
+
+1) RESPALDO
+Antes de ejecutar la migración, realiza un respaldo de PostgreSQL/Aiven.
+
+2) MIGRACIÓN
+Conéctate a defaultdb y ejecuta:
+
+\i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/13_estadias_v5.sql'
+
+Debe terminar con:
+Migracion 13 aplicada. Modulo integral de estadias V5 listo.
+
+3) CREAR CUENTA DE SERVICIOS ESCOLARES
+La migración crea el rol id_rol=6, pero NO crea una contraseña institucional.
+Crea el usuario con un hash bcrypt desde tu procedimiento administrativo o mediante SQL controlado.
+No permitas que este rol se registre desde el formulario público.
+
+Ejemplo, si pgcrypto está habilitado (CAMBIA correo y contraseña antes de ejecutar):
+
+INSERT INTO usuarios(nombre,apellido,correo,password_hash,id_rol,estado)
+VALUES ('Servicios','Escolares','servicios.escolares@uteq.edu.mx',crypt('CAMBIAR_PASSWORD',gen_salt('bf',12)),6,'activo');
+
+4) CÓDIGO
+Copia esta V5 sobre tu repositorio actual, revisa que backend/.env NO esté rastreado y ejecuta:
+
+git status
+git add .
+git commit -m "SkillMatch V5 - modulo institucional de estadias"
+git push origin main
+
+5) VARIABLES DE ENTORNO
+No se agregan secretos nuevos. Mantén DATABASE_URL, JWT_SECRET y Cloudinary en el servidor.
+Cloudinary es muy recomendable para guías, seguros y avances porque Render puede usar disco efímero.
+
+6) VERIFICAR DEPLOY
+https://skillmatchweb.onrender.com/api/public/version
+
+Debe devolver version:
+5.0.0-estadias-expediente
+
+7) PRUEBA FUNCIONAL RECOMENDADA
+A. Admin crea periodo.
+B. Admin crea grupo y asigna profesor.
+C. Admin asigna un estudiante al grupo.
+D. Admin publica guía y rúbrica.
+E. Profesor define las 3 fechas.
+F. Estudiante registra empresa/proyecto.
+G. Estudiante carga seguro.
+H. Servicios Escolares lo valida.
+I. Estudiante entrega Avance 1.
+J. Profesor lo evalúa SA/DE/AU y agrega observaciones.
+K. Revisar expediente en Servicios Escolares.
+
+NOTAS
+- La configuración exacta del seguro, documentos obligatorios y rúbricas se puede ampliar cuando el encargado de estadías confirme esos formatos.
+- V5 no elimina ni reemplaza proyectos de portafolio; el proyecto oficial de estadía se guarda por separado.

@@ -9,6 +9,7 @@ const estudianteRoutes = require('./routes/estudianteRoutes');
 const publicRoutes = require('./routes/publicRoutes');
 const vacantesRoutes = require('./routes/vacantesRoutes');
 const profesorRoutes = require('./routes/profesorRoutes');
+const estadiaRoutes = require('./routes/estadiaRoutes');
 
 const app = express();
 const isDevelopment = app.get('env') === 'development';
@@ -81,6 +82,7 @@ app.use('/api/vacantes', vacantesRoutes);
 app.use('/api/admin', require('./routes/adminRoutes'));
 
 app.use('/api/profesor', profesorRoutes);
+app.use('/api/estadias', estadiaRoutes);
 
 app.use((err, _req, res, _next) => {
   // Manejo de errores de validación de archivos (Multer o formato)

@@ -1,0 +1,36 @@
+const express = require('express');
+const router = express.Router();
+const verificarToken = require('../middlewares/authMiddleware');
+const controller = require('../controllers/estadiaController');
+const { uploadEvidencias, procesarYSubirACloudinary } = require('../middlewares/uploadEvidencias');
+
+router.use(verificarToken);
+router.get('/resumen', controller.resumen);
+router.get('/periodos', controller.listarPeriodos);
+router.post('/periodos', controller.crearPeriodo);
+router.get('/guias', controller.listarGuias);
+router.post('/guias', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.crearGuia);
+router.get('/rubricas', controller.listarRubricas);
+router.get('/talleres', controller.listarTalleres);
+router.post('/talleres', controller.crearTaller);
+router.post('/rubricas', controller.crearRubrica);
+router.get('/grupos', controller.listarGrupos);
+router.post('/grupos', controller.crearGrupo);
+router.post('/grupos/:id/alumnos', controller.asignarAlumnoGrupo);
+router.get('/grupos/:id/alumnos', controller.alumnosGrupo);
+router.get('/grupos/:id/fechas', controller.fechasGrupo);
+router.put('/grupos/:id/fechas', controller.guardarFechasGrupo);
+router.get('/catalogos-admin', controller.catalogosAdmin);
+router.get('/registro/contexto', controller.miContextoRegistro);
+router.get('/mi-estadia', controller.obtenerMiEstadia);
+router.post('/mi-estadia', controller.registrarMiEstadia);
+router.post('/mi-estadia/seguro', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.guardarSeguro);
+router.get('/seguros', controller.listarSeguros);
+router.put('/seguros/:id', controller.validarSeguro);
+router.post('/avances/:idFecha/entregas', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.entregarAvance);
+router.get('/profesor/entregas', controller.entregasProfesor);
+router.post('/profesor/entregas/:id/revision', controller.revisarEntrega);
+router.get('/expedientes', controller.listarExpedientes);
+router.get('/expedientes/:id', controller.detalleExpediente);
+
+module.exports = router;

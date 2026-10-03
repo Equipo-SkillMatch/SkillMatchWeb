@@ -10,6 +10,7 @@ import VerProyecto from './pages/VerProyecto';
 import VerAlumno from './pages/VerAlumno';
 import Terminos from './pages/Terminos';
 import Privacidad from './pages/Privacidad';
+import ModuloEstadias from './pages/ModuloEstadias';
 
 import RutaProtegida from './components/RutaProtegida';
 import './CSS/DashboardTheme.css';
@@ -66,6 +67,16 @@ export default function App() {
               <DashboardEstudiante />
             </RutaProtegida>
           } 
+        />
+
+        {/* Módulo institucional de estadías (Admin, Estudiante, Profesor, Vinculación, Servicios Escolares) */}
+        <Route
+          path="/estadias/*"
+          element={
+            <RutaProtegida rolesPermitidos={['1','2','4','5','6']}>
+              <ModuloEstadias />
+            </RutaProtegida>
+          }
         />
 
         {/* Ver Alumno: Cualquier usuario logueado puede entrar */}

@@ -32,6 +32,7 @@ const menuAdmin = [
   { key: 'profesores', label: 'Profesores', icon: 'teacher' },
   { key: 'proyectos', label: 'Proyectos', icon: 'folder' },
   { key: 'empresas', label: 'Empresas', icon: 'building' },
+  { key: 'estadias', label: 'Estadías', icon: 'graduation' },
   { key: 'chatbot', label: 'Chatbot', icon: 'bot' },
   { key: 'perfil', label: 'Mi perfil', icon: 'user' },
 ];
@@ -43,6 +44,7 @@ const menuVinculacion = [
   { key: 'postulaciones', label: 'Postulaciones', icon: 'clipboard' },
   { key: 'candidatos', label: 'Candidatos', icon: 'target' },
   { key: 'reportes', label: 'Reportes', icon: 'report' },
+  { key: 'estadias', label: 'Estadías', icon: 'graduation' },
   { key: 'perfil', label: 'Mi perfil', icon: 'user' },
 ];
 
@@ -102,6 +104,7 @@ export default function DashboardVinculacion() {
     setListStatus('todos');
     setListSecondary('todos');
     setListSort('recientes');
+    if (vista === 'estadias') { navigate('/estadias'); return; }
     if (vista === 'chatbot') cargarChatbot();
     if (vista === 'perfil') cargarPerfil();
   };
@@ -396,7 +399,7 @@ export default function DashboardVinculacion() {
           <div className="nav-item" style={{ marginTop: 12, color: '#fca5a5' }} onClick={() => { localStorage.clear(); navigate('/'); }}>
             <span className="nav-icon"><AppIcon name="logout" /></span> Cerrar sesión
           </div>
-          <div className="sidebar-build">SkillMatch V4.0</div>
+          <div className="sidebar-build">SkillMatch V5.0</div>
         </div>
         <div className="sidebar-user">
           <div className="user-avatar">{initials(`${user.nombre || ''} ${user.apellido || ''}`)}</div>
