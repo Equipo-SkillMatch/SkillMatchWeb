@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../CSS/Registro.css';
 import { API_BASE } from '../config/api';
 import BrandLogo from '../components/BrandLogo';
 import AppIcon from '../components/AppIcon';
+
+
+const norm = (v='') => String(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 
 const carrerasDefault = [
   'Ing. en Desarrollo y Gestión de Software',
@@ -52,6 +55,8 @@ export default function Registro() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [role, setRole] = useState(2);
+  const [gruposEscolares,setGruposEscolares]=useState([]);
+  useEffect(()=>{fetch(`${API_BASE}/public/grupos-escolares`).then(r=>r.json()).then(d=>setGruposEscolares(d.grupos||[])).catch(()=>setGruposEscolares([]));},[]);
   const [estForm, setEstForm] = useState({
     nombre: '',
     apellido: '',
@@ -63,6 +68,7 @@ export default function Registro() {
     semestre: '',
     carrera: '',
     grupo: '',
+    id_grupo_escolar: '',
     departamento: '',
     asignaturas: '',
   });
@@ -126,6 +132,7 @@ export default function Registro() {
           carrera: estForm.carrera,
           semestre: Number(estForm.semestre),
           grupo: estForm.grupo,
+          id_grupo_escolar: estForm.id_grupo_escolar || null,
         }
         : {
           ...basePayload,
@@ -209,7 +216,7 @@ export default function Registro() {
                 <div className="register-grid register-grid--3">
                   <label className="register-field"><span>Matrícula</span><input name="matricula" value={estForm.matricula} onChange={handleEst} placeholder="2023371089" required /></label>
                   <label className="register-field"><span>Cuatrimestre</span><select name="semestre" value={estForm.semestre} onChange={handleEst} required><option value="">Selecciona</option>{Array.from({ length: 11 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}°</option>)}</select></label>
-                  <label className="register-field"><span>Grupo</span><input name="grupo" value={estForm.grupo} onChange={handleEst} placeholder="A" /></label>
+                  <label className="register-field"><span>Grupo</span><select name="id_grupo_escolar" value={estForm.id_grupo_escolar} onChange={handleEst}><option value="">Selecciona tu grupo</option>{gruposEscolares.filter(g=>!estForm.carrera||norm(g.carrera)===norm(estForm.carrera)).map(g=><option key={g.id_grupo_escolar} value={g.id_grupo_escolar}>{g.nombre}{g.generacion?` · ${g.generacion}`:''}</option>)}</select></label>
                 </div>
                 <div className="register-grid">
                   <label className="register-field"><span>Carrera</span><select name="carrera" value={estForm.carrera} onChange={handleEst} required><option value="">Selecciona tu carrera</option>{carrerasDefault.map((carrera) => <option key={carrera} value={carrera}>{carrera}</option>)}</select></label>

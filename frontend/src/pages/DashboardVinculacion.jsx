@@ -32,7 +32,6 @@ const menuAdmin = [
   { key: 'profesores', label: 'Profesores', icon: 'teacher' },
   { key: 'proyectos', label: 'Proyectos', icon: 'folder' },
   { key: 'empresas', label: 'Empresas', icon: 'building' },
-  { key: 'estadias', label: 'Estadías', icon: 'graduation' },
   { key: 'chatbot', label: 'Chatbot', icon: 'bot' },
   { key: 'perfil', label: 'Mi perfil', icon: 'user' },
 ];
@@ -44,7 +43,6 @@ const menuVinculacion = [
   { key: 'postulaciones', label: 'Postulaciones', icon: 'clipboard' },
   { key: 'candidatos', label: 'Candidatos', icon: 'target' },
   { key: 'reportes', label: 'Reportes', icon: 'report' },
-  { key: 'estadias', label: 'Estadías', icon: 'graduation' },
   { key: 'perfil', label: 'Mi perfil', icon: 'user' },
 ];
 
@@ -104,7 +102,6 @@ export default function DashboardVinculacion() {
     setListStatus('todos');
     setListSecondary('todos');
     setListSort('recientes');
-    if (vista === 'estadias') { navigate('/estadias'); return; }
     if (vista === 'chatbot') cargarChatbot();
     if (vista === 'perfil') cargarPerfil();
   };

@@ -33,4 +33,25 @@ router.post('/profesor/entregas/:id/revision', controller.revisarEntrega);
 router.get('/expedientes', controller.listarExpedientes);
 router.get('/expedientes/:id', controller.detalleExpediente);
 
+
+router.put('/periodos/:id', controller.actualizarPeriodo);
+router.get('/catalogos-v6', controller.catalogosV6);
+router.post('/grupos-escolares', controller.crearGrupoEscolar);
+router.put('/alumnos/:id/escolar', controller.actualizarAlumnoEscolar);
+router.put('/profesores/:id/tutor', controller.actualizarProfesorTutor);
+router.put('/grupos/:id/tutor', controller.actualizarTutorGrupo);
+router.get('/periodos/:id/grupos-escolares', controller.obtenerGruposPeriodo);
+router.put('/periodos/:id/grupos-escolares', controller.guardarGruposPeriodo);
+router.post('/periodos/:id/generar-grupos', controller.generarGruposEstadia);
+router.put('/talleres/:id', controller.actualizarTaller);
+router.get('/configuracion-calificaciones', controller.obtenerCalificaciones);
+router.put('/configuracion-calificaciones', controller.actualizarCalificaciones);
+router.get('/servicios/alumnos', controller.alumnosServicios);
+router.get('/servicios/alumnos/:id', controller.detalleAlumnoServicios);
+router.get('/profesor/grupos', controller.gruposProfesor);
+router.get('/profesor/grupos/:id', controller.detalleGrupoProfesor);
+router.post('/avances/:idFecha/enlace', controller.entregarEnlace);
+router.post('/mi-estadia/memoria-final', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirMemoriaFinal);
+router.put('/profesor/estadias/:idEstadia/memoria-final', controller.autorizarMemoriaFinal);
+
 module.exports = router;

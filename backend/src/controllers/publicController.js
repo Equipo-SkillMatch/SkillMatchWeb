@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '5.0.0-estadias-expediente';
+const APP_VERSION = '6.0.0-estadias-integradas';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);
@@ -204,3 +204,8 @@ exports.obtenerVersion = (_req, res) => res.json({
   version: APP_VERSION,
   storage: process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET ? 'cloudinary' : 'local',
 });
+
+exports.listarGruposEscolaresPublicos = async (_req,res) => {
+  try{const [rows]=await db.query(`SELECT ge.id_grupo_escolar,ge.nombre,ge.generacion,c.id_carrera,c.nombre carrera FROM grupos_escolares ge JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE ge.activo=TRUE ORDER BY c.nombre,ge.generacion,ge.nombre`);res.json({ok:true,grupos:rows});}
+  catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los grupos escolares.'});}
+};

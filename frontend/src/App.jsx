@@ -69,11 +69,11 @@ export default function App() {
           } 
         />
 
-        {/* Módulo institucional de estadías (Admin, Estudiante, Profesor, Vinculación, Servicios Escolares) */}
+        {/* Módulo institucional de estadías (Admin, Estudiante, Profesor, Servicios Escolares) */}
         <Route
           path="/estadias/*"
           element={
-            <RutaProtegida rolesPermitidos={['1','2','4','5','6']}>
+            <RutaProtegida rolesPermitidos={['1','2','4','6']}>
               <ModuloEstadias />
             </RutaProtegida>
           }

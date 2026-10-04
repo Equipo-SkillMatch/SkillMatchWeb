@@ -1,0 +1,55 @@
+SKILLMATCH V6 — ORDEN DE DESPLIEGUE
+===================================
+
+1) RESPALDA LA BASE DE DATOS.
+
+2) Confirma que V5 ya fue aplicada.
+
+3) Ejecuta:
+   backend/sql/14_estadias_v6.sql
+
+   En psql, ejemplo:
+   \i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/14_estadias_v6.sql'
+
+4) Sube los archivos V6 al repositorio.
+
+5) Despliega backend y frontend.
+
+6) Comprueba:
+   GET /api/public/version
+   Debe devolver: 6.0.0-estadias-integradas
+
+7) Prueba por rol:
+   ADMIN
+   - Crear grupos escolares.
+   - Asignar carrera y activar Tutor de estadía a profesores.
+   - Crear/editar periodo.
+   - Elegir grupos escolares que salen a estadía.
+   - Formar grupos automáticos (máximo 6 alumnos, misma carrera, un tutor por grupo).
+   - Crear/editar Taller 1, 2 y 3 con sus fechas.
+   - Revisar/configurar SA/DE/AU.
+
+   ESTUDIANTE
+   - Registrar empresa/responsable/proyecto.
+   - Compartir Google Docs en cada entrega.
+   - Agregar comentario antes del cierre.
+   - Consultar retroalimentación y calificación.
+   - Cuando el profesor habilite la memoria final, subir PDF grupo_nombre.pdf.
+
+   PROFESOR
+   - Ver grupo, generación y alumnos.
+   - Ver empresa, horario y proyecto por alumno.
+   - Revisar Google Docs y agregar notas/sugerencias.
+   - Asignar SA/DE/AU.
+   - Marcar memoria terminada para habilitar PDF final.
+
+   SERVICIOS ESCOLARES
+   - Consultar TODOS los alumnos con filtros por carrera/grupo.
+   - Abrir información completa del alumno.
+   - En Seguro Facultativo ver solo alumnos que están en estadía.
+   - Editar Mi perfil y contraseña.
+
+8) Vinculación ya NO debe mostrar ni acceder a Estadías.
+
+IMPORTANTE:
+No vuelvas a ejecutar 13_estadias_v5.sql si V5 ya está aplicada. La actualización incremental es 14_estadias_v6.sql.

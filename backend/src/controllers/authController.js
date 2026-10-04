@@ -234,7 +234,7 @@ exports.register = async (req, res) => {
   try {
     const {
       nombre, apellido, correo, password, telefono, id_rol,
-      matricula, carrera, semestre, fecha_inicio_carrera,
+      matricula, carrera, semestre, fecha_inicio_carrera, id_grupo_escolar,
       razon_social, giro, contacto,
       departamento, asignaturas
     } = req.body;
@@ -263,6 +263,7 @@ exports.register = async (req, res) => {
         return res.status(400).json({ ok: false, mensaje: 'Faltan datos de estudiante' });
       }
       await Estudiante.create({ id_usuario, matricula, carrera, semestre, fecha_inicio_carrera, conn });
+      if (id_grupo_escolar) await conn.query('UPDATE estudiantes SET id_grupo_escolar=? WHERE id_estudiante=?',[id_grupo_escolar,id_usuario]);
     } 
     else if (Number(id_rol) === 3) {
       if (!razon_social || !contacto) {

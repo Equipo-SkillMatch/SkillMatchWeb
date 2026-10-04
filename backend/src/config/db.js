@@ -66,6 +66,7 @@ const INSERT_RETURNING_COLUMNS = {
   seguros_facultativos: 'id_seguro',
   entregas_avances_estadia: 'id_entrega',
   revisiones_avances_estadia: 'id_revision',
+  grupos_escolares: 'id_grupo_escolar',
 };
 
 function normalizePostgresError(error) {
