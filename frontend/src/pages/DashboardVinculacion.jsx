@@ -32,6 +32,7 @@ const menuAdmin = [
   { key: 'profesores', label: 'Profesores', icon: 'teacher' },
   { key: 'proyectos', label: 'Proyectos', icon: 'folder' },
   { key: 'empresas', label: 'Empresas', icon: 'building' },
+  { key: 'estadias', label: 'Estadías', icon: 'graduation' },
   { key: 'chatbot', label: 'Chatbot', icon: 'bot' },
   { key: 'perfil', label: 'Mi perfil', icon: 'user' },
 ];
@@ -96,6 +97,12 @@ export default function DashboardVinculacion() {
   const navRole = isAdmin ? 'Administrador' : 'Vinculación';
 
   const handleNavClick = (vista) => {
+    if (vista === 'estadias') {
+      navigate('/estadias');
+      setIsMobileMenuOpen(false);
+      return;
+    }
+
     setView(vista);
     setIsMobileMenuOpen(false);
     setListSearch('');
@@ -396,7 +403,7 @@ export default function DashboardVinculacion() {
           <div className="nav-item" style={{ marginTop: 12, color: '#fca5a5' }} onClick={() => { localStorage.clear(); navigate('/'); }}>
             <span className="nav-icon"><AppIcon name="logout" /></span> Cerrar sesión
           </div>
-          <div className="sidebar-build">SkillMatch V5.0</div>
+          <div className="sidebar-build">SkillMatch V6.0</div>
         </div>
         <div className="sidebar-user">
           <div className="user-avatar">{initials(`${user.nombre || ''} ${user.apellido || ''}`)}</div>

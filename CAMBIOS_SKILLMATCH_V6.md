@@ -36,3 +36,9 @@ Ejecutar únicamente después de haber aplicado V5 (`13_estadias_v5.sql`):
 La API pública cambia a:
 
 `6.0.0-estadias-integradas`
+
+## Corrección de acceso de Administrador a Estadías
+- Se agregó **Estadías** al menú del Administrador.
+- El acceso navega a `/estadias` y mantiene Vinculación sin acceso al módulo.
+- Se actualizó la etiqueta visual del panel a **SkillMatch V6.0**.
+- Se eliminó el archivo temporal `backend/src/routes/estadiaRoutes.js.tmp`.
