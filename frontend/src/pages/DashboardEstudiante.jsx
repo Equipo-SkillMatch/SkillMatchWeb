@@ -157,6 +157,7 @@ export default function DashboardEstudiante() {
   const [loadingProyectos, setLoadingProyectos] = useState(false);
   const [loadingEvidencias, setLoadingEvidencias] = useState(false);
   const [globalError, setGlobalError] = useState('');
+  const [tieneGrupoEstadia,setTieneGrupoEstadia]=useState(false);
 
   const [tecnologiasSeleccionadas, setTecnologiasSeleccionadas] = useState([]);
   const [imgPrincipal, setImgPrincipal] = useState(null);
@@ -497,6 +498,14 @@ export default function DashboardEstudiante() {
     }
   };
 
+  const verificarGrupoEstadia = async () => {
+    try {
+      const res=await fetch(`${API_BASE}/estadias/registro/contexto`,{headers:{Authorization:`Bearer ${token}`}});
+      const data=await res.json();
+      setTieneGrupoEstadia(Boolean(res.ok&&data?.contexto?.id_grupo));
+    } catch (_) { setTieneGrupoEstadia(false); }
+  };
+
   const cargarProyectos = async () => {
     try {
       setLoadingProyectos(true);
@@ -831,6 +840,7 @@ export default function DashboardEstudiante() {
       return;
     }
     cargarDashboard();
+    verificarGrupoEstadia();
     cargarProyectos();
     cargarEvidencias();
     cargarVacantes(); 
@@ -1110,9 +1120,9 @@ export default function DashboardEstudiante() {
               <span className="nav-icon"><AppIcon name="dashboard" /></span> Dashboard
             </div>
             
-            <div className="nav-item" onClick={() => navigate('/estadias')}>
+            {tieneGrupoEstadia && <div className="nav-item" onClick={() => navigate('/estadias')}>
               <span className="nav-icon"><AppIcon name="graduation" /></span> Mi estadía
-            </div>
+            </div>}
             <div className={`nav-item ${view === 'vacantes' ? 'active' : ''}`} onClick={() => handleNavClick('vacantes')}>
               <span className="nav-icon"><AppIcon name="briefcase" /></span> Bolsa de Trabajo
             </div>

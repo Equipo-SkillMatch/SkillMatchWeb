@@ -35,6 +35,13 @@ router.get('/expedientes/:id', controller.detalleExpediente);
 
 
 router.put('/periodos/:id', controller.actualizarPeriodo);
+router.delete('/periodos/:id', controller.eliminarPeriodo);
+router.delete('/talleres/:id', controller.eliminarTaller);
+router.get('/grupos/:id/disponibles', controller.alumnosDisponiblesGrupoEstadia);
+router.post('/grupos/:id/alumnos-manual', controller.agregarAlumnoGrupoEstadia);
+router.delete('/grupos/:id/alumnos/:idEstudiante', controller.quitarAlumnoGrupoEstadia);
+router.get('/resumen-v61', controller.resumenV61);
+
 router.get('/catalogos-v6', controller.catalogosV6);
 router.post('/grupos-escolares', controller.crearGrupoEscolar);
 router.put('/alumnos/:id/escolar', controller.actualizarAlumnoEscolar);

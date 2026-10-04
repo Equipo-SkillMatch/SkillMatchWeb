@@ -234,7 +234,7 @@ exports.register = async (req, res) => {
   try {
     const {
       nombre, apellido, correo, password, telefono, id_rol,
-      matricula, carrera, semestre, fecha_inicio_carrera, id_grupo_escolar,
+      matricula, carrera, semestre, fecha_inicio_carrera, id_grupo_escolar, grupo,
       razon_social, giro, contacto,
       departamento, asignaturas
     } = req.body;
@@ -263,7 +263,16 @@ exports.register = async (req, res) => {
         return res.status(400).json({ ok: false, mensaje: 'Faltan datos de estudiante' });
       }
       await Estudiante.create({ id_usuario, matricula, carrera, semestre, fecha_inicio_carrera, conn });
-      if (id_grupo_escolar) await conn.query('UPDATE estudiantes SET id_grupo_escolar=? WHERE id_estudiante=?',[id_grupo_escolar,id_usuario]);
+      let grupoId=id_grupo_escolar||null;
+      let grupoNombre=grupo||null;
+      if(!grupoId && grupoNombre){
+        const [match]=await conn.query(`SELECT ge.id_grupo_escolar,ge.nombre FROM grupos_escolares ge JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE ge.activo=TRUE AND LOWER(TRIM(ge.nombre))=LOWER(TRIM(?)) AND LOWER(TRIM(c.nombre))=LOWER(TRIM(?)) LIMIT 1`,[grupoNombre,carrera]);
+        if(match.length){grupoId=match[0].id_grupo_escolar;grupoNombre=match[0].nombre;}
+      } else if(grupoId){
+        const [match]=await conn.query('SELECT nombre FROM grupos_escolares WHERE id_grupo_escolar=? AND activo=TRUE',[grupoId]);
+        if(match.length) grupoNombre=match[0].nombre;
+      }
+      await conn.query('UPDATE estudiantes SET id_grupo_escolar=?, grupo=? WHERE id_estudiante=?',[grupoId,grupoNombre,id_usuario]);
     } 
     else if (Number(id_rol) === 3) {
       if (!razon_social || !contacto) {

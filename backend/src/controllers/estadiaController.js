@@ -417,7 +417,7 @@ exports.catalogosV6 = async (req,res) => {
     const [carreras]=await db.query('SELECT id_carrera,nombre FROM carreras ORDER BY nombre');
     const [gruposEscolares]=await db.query(`SELECT ge.*,c.nombre carrera,(SELECT COUNT(*) FROM estudiantes e WHERE e.id_grupo_escolar=ge.id_grupo_escolar) alumnos FROM grupos_escolares ge JOIN carreras c ON c.id_carrera=ge.id_carrera ORDER BY c.nombre,ge.generacion,ge.nombre`);
     const [profesores]=await db.query(`SELECT p.id_profesor,p.id_carrera,p.tutor_estadia,u.nombre,u.apellido,u.correo,c.nombre carrera FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor LEFT JOIN carreras c ON c.id_carrera=p.id_carrera WHERE u.estado='activo' ORDER BY u.apellido,u.nombre`);
-    const [estudiantes]=await db.query(`SELECT e.id_estudiante,e.matricula,e.carrera,e.id_grupo_escolar,u.nombre,u.apellido,u.correo,u.estado estado_usuario,ge.nombre grupo_escolar,ge.generacion FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar ORDER BY e.carrera,ge.nombre,u.apellido,u.nombre`);
+    const [estudiantes]=await db.query(`SELECT e.id_estudiante,e.matricula,e.carrera,e.id_grupo_escolar,u.nombre,u.apellido,u.correo,u.estado estado_usuario,COALESCE(ge.nombre,e.grupo) grupo_escolar,ge.generacion FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar ORDER BY e.carrera,ge.nombre,u.apellido,u.nombre`);
     const config=await configCalificaciones();
     res.json({ok:true,carreras,gruposEscolares,profesores,estudiantes,config});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los catálogos V6.'});}
@@ -435,10 +435,18 @@ exports.actualizarAlumnoEscolar = async (req,res) => {
   if(!requireRoles(req,res,[1])) return;
   const {id_grupo_escolar,estado}=req.body;
   try{
-    if(id_grupo_escolar!==undefined) await db.query('UPDATE estudiantes SET id_grupo_escolar=? WHERE id_estudiante=?',[id_grupo_escolar||null,req.params.id]);
+    if(id_grupo_escolar!==undefined){
+      let grupoNombre=null;
+      if(id_grupo_escolar){
+        const [grupo]=await db.query('SELECT id_grupo_escolar,nombre FROM grupos_escolares WHERE id_grupo_escolar=? AND activo=TRUE',[id_grupo_escolar]);
+        if(!grupo.length) return res.status(400).json({ok:false,mensaje:'El grupo escolar seleccionado no existe o está inactivo.'});
+        grupoNombre=grupo[0].nombre;
+      }
+      await db.query('UPDATE estudiantes SET id_grupo_escolar=?, grupo=? WHERE id_estudiante=?',[id_grupo_escolar||null,grupoNombre,req.params.id]);
+    }
     if(estado) await db.query('UPDATE usuarios SET estado=? WHERE id_usuario=?',[estado,req.params.id]);
     res.json({ok:true});
-  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo actualizar el alumno.'});}
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo actualizar el alumno.'});}
 };
 
 exports.actualizarProfesorTutor = async (req,res) => {
@@ -617,7 +625,7 @@ exports.actualizarTutorGrupo = async (req,res) => {
 exports.detalleAlumnoServicios = async (req,res) => {
   if(!requireRoles(req,res,[1,6])) return;
   try{
-    const [rows]=await db.query(`SELECT e.*,u.nombre,u.apellido,u.correo,u.telefono,u.foto_perfil,u.estado estado_usuario,u.fecha_registro,ge.nombre grupo_escolar,ge.generacion,c.nombre carrera_catalogo FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar LEFT JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE e.id_estudiante=? LIMIT 1`,[req.params.id]);
+    const [rows]=await db.query(`SELECT e.*,u.nombre,u.apellido,u.correo,u.telefono,u.foto_perfil,u.estado estado_usuario,u.fecha_registro,COALESCE(ge.nombre,e.grupo) grupo_escolar,ge.generacion,c.nombre carrera_catalogo FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar LEFT JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE e.id_estudiante=? LIMIT 1`,[req.params.id]);
     if(!rows.length)return res.status(404).json({ok:false,mensaje:'Alumno no encontrado.'});
     const [proyectos]=await db.query('SELECT id_proyecto,titulo,descripcion,estado,fecha_registro,tecnologias FROM proyectos WHERE id_estudiante=? ORDER BY fecha_registro DESC',[req.params.id]);
     const [postulaciones]=await db.query(`SELECT po.*,v.titulo vacante,em.razon_social empresa FROM postulaciones po JOIN vacantes v ON v.id_vacante=po.id_vacante JOIN empresas em ON em.id_empresa=v.id_empresa WHERE po.id_estudiante=? ORDER BY po.fecha_postulacion DESC`,[req.params.id]);
@@ -626,3 +634,96 @@ exports.detalleAlumnoServicios = async (req,res) => {
     res.json({ok:true,alumno:rows[0],proyectos,postulaciones,softSkills:soft[0]||null,estadia:estadia[0]||null});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo cargar la información completa del alumno.'});}
 };
+
+// V6.1: administración granular de periodos, talleres y grupos.
+exports.eliminarPeriodo = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  try{
+    const [uso]=await db.query('SELECT COUNT(*) total FROM estadias WHERE id_periodo=?',[req.params.id]);
+    if(Number(uso[0]?.total||0)>0) return res.status(409).json({ok:false,mensaje:'No se puede eliminar el periodo porque ya tiene estadías registradas. Puedes editarlo o desactivarlo.'});
+    const [r]=await db.query('DELETE FROM periodos_estadia WHERE id_periodo=?',[req.params.id]);
+    if(!r.rowCount && !r.affectedRows) return res.status(404).json({ok:false,mensaje:'Periodo no encontrado.'});
+    res.json({ok:true});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo eliminar el periodo.'});}
+};
+
+exports.eliminarTaller = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  const conn=await db.getConnection();
+  try{
+    const [tw]=await conn.query('SELECT id_taller,id_periodo,numero_entrega FROM talleres_estadia WHERE id_taller=?',[req.params.id]);
+    if(!tw.length) return res.status(404).json({ok:false,mensaje:'Taller no encontrado.'});
+    const t=tw[0];
+    if(t.numero_entrega){
+      const [entregas]=await conn.query(`SELECT COUNT(*) total FROM entregas_avances_estadia ea JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance JOIN grupos_estadia g ON g.id_grupo=fa.id_grupo WHERE g.id_periodo=? AND fa.numero_avance=?`,[t.id_periodo,t.numero_entrega]);
+      if(Number(entregas[0]?.total||0)>0) return res.status(409).json({ok:false,mensaje:'No se puede eliminar este taller porque ya existen entregas de alumnos relacionadas.'});
+    }
+    await conn.beginTransaction();
+    if(t.numero_entrega) await conn.query(`DELETE FROM fechas_avances_estadia WHERE numero_avance=? AND id_grupo IN (SELECT id_grupo FROM grupos_estadia WHERE id_periodo=?)`,[t.numero_entrega,t.id_periodo]);
+    await conn.query('DELETE FROM talleres_estadia WHERE id_taller=?',[req.params.id]);
+    await conn.commit();
+    res.json({ok:true});
+  }catch(e){try{await conn.rollback();}catch{};console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo eliminar el taller.'});}
+  finally{conn.release();}
+};
+
+exports.alumnosDisponiblesGrupoEstadia = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  try{
+    const [g]=await db.query('SELECT id_grupo,id_periodo,id_carrera FROM grupos_estadia WHERE id_grupo=?',[req.params.id]);
+    if(!g.length) return res.status(404).json({ok:false,mensaje:'Grupo de estadía no encontrado.'});
+    const grupo=g[0];
+    const [rows]=await db.query(`SELECT e.id_estudiante,e.matricula,u.nombre,u.apellido,u.correo,ge.nombre grupo_escolar
+      FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar
+      WHERE u.estado='activo'
+        AND (? IS NULL OR ge.id_carrera=?)
+        AND NOT EXISTS (
+          SELECT 1 FROM grupo_estudiantes_estadia gee
+          JOIN grupos_estadia gg ON gg.id_grupo=gee.id_grupo
+          WHERE gee.id_estudiante=e.id_estudiante AND gg.id_periodo=?
+        )
+      ORDER BY ge.nombre,u.apellido,u.nombre`,[grupo.id_carrera,grupo.id_carrera,grupo.id_periodo]);
+    res.json({ok:true,alumnos:rows});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los alumnos disponibles.'});}
+};
+
+exports.agregarAlumnoGrupoEstadia = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  const idGrupo=Number(req.params.id), idEstudiante=Number(req.body.id_estudiante);
+  if(!idEstudiante) return res.status(400).json({ok:false,mensaje:'Selecciona un alumno.'});
+  try{
+    const [g]=await db.query('SELECT id_grupo,id_periodo,id_carrera,max_alumnos FROM grupos_estadia WHERE id_grupo=?',[idGrupo]);
+    if(!g.length) return res.status(404).json({ok:false,mensaje:'Grupo no encontrado.'});
+    const [count]=await db.query('SELECT COUNT(*) total FROM grupo_estudiantes_estadia WHERE id_grupo=?',[idGrupo]);
+    if(Number(count[0]?.total||0)>=Number(g[0].max_alumnos||6)) return res.status(400).json({ok:false,mensaje:'El grupo ya alcanzó su máximo de alumnos.'});
+    const [al]=await db.query(`SELECT e.id_estudiante,ge.id_carrera FROM estudiantes e LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar WHERE e.id_estudiante=?`,[idEstudiante]);
+    if(!al.length) return res.status(404).json({ok:false,mensaje:'Alumno no encontrado.'});
+    if(g[0].id_carrera && Number(al[0].id_carrera)!==Number(g[0].id_carrera)) return res.status(400).json({ok:false,mensaje:'El alumno debe pertenecer a la misma carrera del grupo de estadía.'});
+    const [otro]=await db.query(`SELECT gg.nombre FROM grupo_estudiantes_estadia ge JOIN grupos_estadia gg ON gg.id_grupo=ge.id_grupo WHERE ge.id_estudiante=? AND gg.id_periodo=? LIMIT 1`,[idEstudiante,g[0].id_periodo]);
+    if(otro.length) return res.status(409).json({ok:false,mensaje:`El alumno ya pertenece al grupo ${otro[0].nombre} en este periodo.`});
+    await db.query('INSERT INTO grupo_estudiantes_estadia(id_grupo,id_estudiante) VALUES(?,?)',[idGrupo,idEstudiante]);
+    res.json({ok:true});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo agregar el alumno al grupo de estadía.'});}
+};
+
+exports.quitarAlumnoGrupoEstadia = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  try{
+    const [est]=await db.query('SELECT id_estadia FROM estadias WHERE id_grupo=? AND id_estudiante=? LIMIT 1',[req.params.id,req.params.idEstudiante]);
+    if(est.length) return res.status(409).json({ok:false,mensaje:'No se puede retirar al alumno porque ya registró información de su estadía.'});
+    await db.query('DELETE FROM grupo_estudiantes_estadia WHERE id_grupo=? AND id_estudiante=?',[req.params.id,req.params.idEstudiante]);
+    res.json({ok:true});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo retirar el alumno del grupo.'});}
+};
+
+exports.resumenV61 = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  try{
+    const [porCarrera]=await db.query(`SELECT COALESCE(c.nombre,g.carrera,'Sin carrera') etiqueta,COUNT(*) total FROM grupos_estadia g LEFT JOIN carreras c ON c.id_carrera=g.id_carrera GROUP BY COALESCE(c.nombre,g.carrera,'Sin carrera') ORDER BY total DESC,etiqueta`);
+    const [porPeriodo]=await db.query(`SELECT p.nombre etiqueta,COUNT(g.id_grupo) total FROM periodos_estadia p LEFT JOIN grupos_estadia g ON g.id_periodo=p.id_periodo GROUP BY p.id_periodo,p.nombre,p.fecha_inicio ORDER BY p.fecha_inicio DESC`);
+    const [alumnosPorGrupo]=await db.query(`SELECT g.nombre etiqueta,COUNT(ge.id_estudiante) total FROM grupos_estadia g LEFT JOIN grupo_estudiantes_estadia ge ON ge.id_grupo=g.id_grupo GROUP BY g.id_grupo,g.nombre ORDER BY total DESC,g.nombre LIMIT 12`);
+    res.json({ok:true,graficas:{porCarrera,porPeriodo,alumnosPorGrupo}});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar las gráficas.'});}
+};
+

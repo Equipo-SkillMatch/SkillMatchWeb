@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '6.0.0-estadias-integradas';
+const APP_VERSION = '6.1.0-estadias-control-grupos';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);
