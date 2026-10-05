@@ -4,6 +4,7 @@ import '../CSS/DashboardVinculacion.css';
 import { API_BASE, buildFileUrl } from '../config/api';
 import DashboardInsights from '../components/DashboardInsights';
 import AppIcon from '../components/AppIcon';
+import { showToast, confirmDialog } from '../components/InstitutionalUI';
 
 const initials = (name) => name ? name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'SM';
 const formatFecha = (fecha) => fecha ? new Date(fecha).toLocaleDateString('es-MX') : '—';
@@ -131,7 +132,7 @@ export default function DashboardVinculacion() {
       setReportes(json.data.reportes || {});
     } catch (error) {
       console.error('Error al cargar datos:', error);
-      alert(error.message || 'Error al cargar datos del sistema');
+      showToast(error.message || 'Error al cargar datos del sistema',{type:'error'});
     } finally {
       setLoading(false);
     }
@@ -158,9 +159,9 @@ export default function DashboardVinculacion() {
       if (json.ok) {
         setDetalle(json[tipo]);
         setDetallePermisos(json.permisos || { puedeGestionar: isVinculacion });
-      } else alert(json.mensaje || 'No se pudo cargar el detalle');
+      } else showToast(json.mensaje || 'No se pudo cargar el detalle',{type:'error'});
     } catch (error) {
-      alert('Error de conexión al cargar detalle');
+      showToast('Error de conexión al cargar detalle',{type:'error'});
     } finally {
       setDetalleLoading(false);
     }
@@ -181,7 +182,7 @@ export default function DashboardVinculacion() {
       if (!vacanteRes.ok || !vacanteJson.ok) throw new Error(vacanteJson.mensaje || 'No se pudo cargar la vacante.');
       setDetalle({ postulacion, alumno: alumnoJson.alumno, vacante: vacanteJson.vacante });
     } catch (error) {
-      alert(error.message || 'No se pudo cargar el detalle de la postulación.');
+      showToast(error.message || 'No se pudo cargar el detalle de la postulación.',{type:'error'});
       setDetalleTipo('');
     } finally {
       setDetalleLoading(false);
@@ -189,7 +190,7 @@ export default function DashboardVinculacion() {
   };
 
   const cambiarEstadoEmpresa = async (id, nuevoEstado) => {
-    if (!isVinculacion) return alert('Solo Vinculación puede cambiar el estado de empresas.');
+    if (!isVinculacion) return showToast('Solo Vinculación puede cambiar el estado de empresas.',{type:'warning'});
     try {
       const res = await fetch(`${API_BASE}/admin/empresas/status/${id}`, {
         method: 'PUT',
@@ -197,16 +198,16 @@ export default function DashboardVinculacion() {
         body: JSON.stringify({ nuevoEstado })
       });
       const data = await res.json();
-      if (!data.ok) return alert(data.mensaje || 'No se pudo actualizar la empresa');
+      if (!data.ok) return showToast(data.mensaje || 'No se pudo actualizar la empresa',{type:'error'});
       await cargarDatos();
       if (detalleTipo === 'empresa') abrirDetalle('empresa', id);
     } catch (error) {
-      alert('Error al actualizar empresa');
+      showToast('Error al actualizar empresa',{type:'error'});
     }
   };
 
   const cambiarEstadoVacante = async (id, estado) => {
-    if (!isVinculacion) return alert('Solo Vinculación puede cambiar el estado de vacantes.');
+    if (!isVinculacion) return showToast('Solo Vinculación puede cambiar el estado de vacantes.',{type:'warning'});
     try {
       const res = await fetch(`${API_BASE}/admin/vacantes/${id}`, {
         method: 'PUT',
@@ -214,18 +215,18 @@ export default function DashboardVinculacion() {
         body: JSON.stringify({ estado })
       });
       const data = await res.json();
-      if (!data.ok) return alert(data.mensaje || 'No se pudo actualizar la vacante');
+      if (!data.ok) return showToast(data.mensaje || 'No se pudo actualizar la vacante',{type:'error'});
       await cargarDatos();
       if (detalleTipo === 'vacante') abrirDetalle('vacante', id);
     } catch (error) {
-      alert('Error al actualizar vacante');
+      showToast('Error al actualizar vacante',{type:'error'});
     }
   };
 
   const cambiarEstadoUsuario = async (id, estado) => {
-    if (!isAdmin) return alert('Solo el administrador puede suspender o habilitar cuentas.');
+    if (!isAdmin) return showToast('Solo el administrador puede suspender o habilitar cuentas.',{type:'warning'});
     const accion = estado === 'activo' ? 'habilitar' : 'suspender';
-    if (!window.confirm(`¿Seguro que deseas ${accion} esta cuenta?`)) return;
+    if (!await confirmDialog({title:`${accion==='habilitar'?'Habilitar':'Suspender'} cuenta`,message:`¿Deseas ${accion} esta cuenta de usuario?`,confirmText:accion==='habilitar'?'Habilitar':'Suspender',tone:accion==='habilitar'?'primary':'danger'})) return;
     try {
       const res = await fetch(`${API_BASE}/admin/usuarios/${id}/estado`, {
         method: 'PUT',
@@ -233,19 +234,19 @@ export default function DashboardVinculacion() {
         body: JSON.stringify({ estado })
       });
       const data = await res.json();
-      if (!data.ok) return alert(data.mensaje || 'No se pudo cambiar el estado');
+      if (!data.ok) return showToast(data.mensaje || 'No se pudo cambiar el estado',{type:'error'});
       await cargarDatos();
       if (detalle?.id_usuario === id) {
         setDetalle({ ...detalle, estado_usuario: estado });
       }
     } catch (error) {
-      alert('Error al cambiar estado de cuenta');
+      showToast('Error al cambiar estado de cuenta',{type:'error'});
     }
   };
 
   const handleCrearEmpresa = async (e) => {
     e.preventDefault();
-    if (!isVinculacion) return alert('Solo Vinculación puede registrar empresas.');
+    if (!isVinculacion) return showToast('Solo Vinculación puede registrar empresas.',{type:'warning'});
     setSavingEmpresa(true);
     try {
       const res = await fetch(`${API_BASE}/admin/empresas`, {
@@ -255,13 +256,13 @@ export default function DashboardVinculacion() {
       });
       const data = await res.json();
       if (data.ok) {
-        alert('Empresa registrada. Queda pendiente de validación por Vinculación.');
+        showToast('Empresa registrada. Queda pendiente de validación por Vinculación.',{type:'success'});
         setShowEmpresaModal(false);
         setFormEmpresa({ razon_social: '', rfc: '', domicilio: '', ubicacion: '', giro: '', sector: '', responsable_nombre: '', responsable_apellido: '', responsable_cargo: '', responsable_correo: '', responsable_telefono: '', correo: '', password: '', telefono: '', estado: 'habilitada', observaciones: '' });
         cargarDatos();
-      } else alert(data.mensaje || 'No se pudo registrar la empresa');
+      } else showToast(data.mensaje || 'No se pudo registrar la empresa',{type:'error'});
     } catch (error) {
-      alert('Error de conexión al registrar empresa');
+      showToast('Error de conexión al registrar empresa',{type:'error'});
     } finally {
       setSavingEmpresa(false);
     }
@@ -273,7 +274,7 @@ export default function DashboardVinculacion() {
       const res = await fetch(`${API_BASE}/admin/chatbot`, { headers: { Authorization: `Bearer ${token}` } });
       const json = await res.json();
       if (json.ok) setChatbotItems(json.items || []);
-      else alert(json.mensaje || 'No se pudo cargar el chatbot');
+      else showToast(json.mensaje || 'No se pudo cargar el chatbot',{type:'error'});
     } catch (error) {
       console.error(error);
     }
@@ -281,7 +282,7 @@ export default function DashboardVinculacion() {
 
   const guardarChatbot = async (e) => {
     e.preventDefault();
-    if (!isAdmin) return alert('Solo el administrador puede editar el chatbot.');
+    if (!isAdmin) return showToast('Solo el administrador puede editar el chatbot.',{type:'warning'});
     const url = editingBotId ? `${API_BASE}/admin/chatbot/${editingBotId}` : `${API_BASE}/admin/chatbot`;
     const method = editingBotId ? 'PUT' : 'POST';
     const res = await fetch(url, {
@@ -290,7 +291,7 @@ export default function DashboardVinculacion() {
       body: JSON.stringify(chatbotForm)
     });
     const json = await res.json();
-    if (!json.ok) return alert(json.mensaje || 'No se pudo guardar');
+    if (!json.ok) return showToast(json.mensaje || 'No se pudo guardar',{type:'error'});
     setChatbotForm({ pregunta: '', respuesta: '', categoria: 'general', keywords: '', activa: true });
     setEditingBotId(null);
     cargarChatbot();
@@ -308,7 +309,7 @@ export default function DashboardVinculacion() {
   };
 
   const eliminarChatbot = async (id) => {
-    if (!window.confirm('¿Eliminar esta respuesta del chatbot?')) return;
+    if (!await confirmDialog({title:'Eliminar respuesta',message:'La respuesta seleccionada será eliminada del chatbot.',confirmText:'Eliminar',tone:'danger'})) return;
     await fetch(`${API_BASE}/admin/chatbot/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     cargarChatbot();
   };
@@ -336,7 +337,7 @@ export default function DashboardVinculacion() {
   const guardarPerfil = async (e) => {
     e.preventDefault();
     if (perfilForm.nueva_password && perfilForm.nueva_password !== perfilForm.confirmar_password) {
-      alert('La nueva contraseña y la confirmación no coinciden.');
+      showToast('La nueva contraseña y la confirmación no coinciden.',{type:'warning'});
       return;
     }
     const fd = new FormData();
@@ -344,9 +345,9 @@ export default function DashboardVinculacion() {
     if (perfilFoto) fd.append('foto_perfil', perfilFoto);
     const res = await fetch(`${API_BASE}/admin/perfil`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: fd });
     const json = await res.json();
-    if (!json.ok) return alert(json.mensaje || 'No se pudo actualizar');
+    if (!json.ok) return showToast(json.mensaje || 'No se pudo actualizar',{type:'error'});
     localStorage.setItem('user', JSON.stringify({ ...user, ...json.usuario }));
-    alert('Perfil actualizado correctamente');
+    showToast('Perfil actualizado correctamente',{type:'success'});
     setPerfilFoto(null);
     cargarPerfil();
   };
@@ -761,9 +762,9 @@ function DetalleEmpresa({ empresa, puedeGestionar, cambiarEstadoEmpresa, token, 
       const empresaActualizada = { ...empresa, ...form };
       onSaved?.(empresaActualizada);
       setEditando(false);
-      alert('Empresa actualizada correctamente.');
+      showToast('Empresa actualizada correctamente.',{type:'success'});
     } catch (err) {
-      alert(err.message);
+      showToast(err.message,{type:'error'});
     } finally {
       setGuardando(false);
     }

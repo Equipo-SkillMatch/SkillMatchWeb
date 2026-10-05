@@ -6,6 +6,7 @@ import { API_BASE, buildFileUrl } from '../config/api';
 import BrandLogo from '../components/BrandLogo';
 import Reveal from '../components/Reveal';
 import AppIcon from '../components/AppIcon';
+import { showToast } from '../components/InstitutionalUI';
 
 const benefits = [
   {
@@ -265,15 +266,15 @@ export default function LandingPage() {
       });
       const data = await response.json();
       if (!data.ok) {
-        window.alert(data.mensaje || 'No fue posible registrar la calificación.');
+        showToast(data.mensaje || 'No fue posible registrar la calificación.',{type:'error'});
         return;
       }
       setProyectos((current) => current.map((project, projectIndex) => (
         projectIndex === index ? { ...project, userRating: estrellas } : project
       )));
-      window.alert('Tu calificación fue registrada.');
+      showToast('Tu calificación fue registrada.',{type:'success'});
     } catch (error) {
-      window.alert('Error de conexión al calificar.');
+      showToast('Error de conexión al calificar.',{type:'error'});
     }
   };
 

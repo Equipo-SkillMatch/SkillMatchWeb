@@ -4,6 +4,7 @@ import '../CSS/DashboardEmpresas.css';
 import { API_BASE, buildFileUrl } from '../config/api';
 import DashboardInsights from '../components/DashboardInsights';
 import AppIcon from '../components/AppIcon';
+import { showToast, confirmDialog } from '../components/InstitutionalUI';
 
 // LISTA DE TECNOLOGÍAS PARA LAS BURBUJAS
 const TECH_OPTIONS = [
@@ -148,19 +149,19 @@ export default function DashboardEmpresas() {
         body: fd
       });
       const json = await res.json();
-      if (!json.ok) return alert(json.mensaje || 'No se pudo actualizar el perfil');
-      alert('Perfil actualizado correctamente');
+      if (!json.ok) return showToast(json.mensaje || 'No se pudo actualizar el perfil',{type:'error'});
+      showToast('Perfil actualizado correctamente',{type:'success'});
       setPerfilFoto(null);
       await cargarPerfilEmpresa();
       const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
       localStorage.setItem('user', JSON.stringify({ ...currentUser, ...json.usuario }));
     } catch (error) {
-      alert('Error de conexión al actualizar perfil');
+      showToast('Error de conexión al actualizar perfil',{type:'error'});
     }
   };
 
   const handleAceptarAlumno = async (id_postulacion, nombreAlumno) => {
-    const confirmar = window.confirm(`¿Estás seguro de aceptar a ${nombreAlumno}? Se le enviará un correo de notificación.`);
+    const confirmar = await confirmDialog({title:'Aceptar postulante',message:`Se aceptará a ${nombreAlumno} y se enviará la notificación correspondiente.`,confirmText:'Aceptar alumno'});
     if (!confirmar) return;
 
     try {
@@ -172,20 +173,20 @@ export default function DashboardEmpresas() {
       const json = await res.json();
 
       if (json.ok) {
-        alert("✓ Alumno aceptado. Se ha enviado el correo de notificación.");
+        showToast('Alumno aceptado. Se ha enviado el correo de notificación.',{type:'success'});
         setPostulantes(postulantes.filter(p => p.id_postulacion !== id_postulacion));
         cargarDashboard();
       } else {
-        alert("Error: " + json.mensaje);
+        showToast(json.mensaje || 'No se pudo aceptar al alumno.',{type:'error'});
       }
     } catch (error) {
-      alert("Error de conexión al procesar la aceptación.");
+      showToast('Error de conexión al procesar la aceptación.',{type:'error'});
     }
   };
 
   const abrirModalCrear = () => {
     if (companyData && companyData.estado !== 'habilitada') {
-      alert('Tu empresa aún no está habilitada por Vinculación. Puedes editar tu perfil, pero no publicar vacantes todavía.');
+      showToast('Tu empresa aún no está habilitada por Vinculación. Puedes editar tu perfil, pero no publicar vacantes todavía.',{type:'warning'});
       return;
     }
     setEditingId(null);

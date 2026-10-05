@@ -4,6 +4,7 @@ import BrandLogo from '../components/BrandLogo';
 import '../CSS/VerProyecto.css';
 import { API_BASE, buildFileUrl } from '../config/api';
 import AppIcon from '../components/AppIcon';
+import { showToast } from '../components/InstitutionalUI';
 
 function SafeImage({ src, alt, className = '' }) {
   const [failed, setFailed] = useState(false);
@@ -136,7 +137,7 @@ export default function VerProyecto() {
       window.location.reload();
     } catch (error) {
       console.error(error);
-      alert(error.message || 'Error de conexión al enviar la reseña.');
+      showToast(error.message || 'Error de conexión al enviar la reseña.',{type:'error'});
     } finally {
       setEnviandoReview(false);
     }

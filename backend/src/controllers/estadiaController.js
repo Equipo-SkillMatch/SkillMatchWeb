@@ -273,7 +273,9 @@ exports.registrarMiEstadia = async (req,res) => {
 exports.obtenerMiEstadia = async (req,res) => {
   if (!requireRoles(req,res,[2])) return;
   try {
-    const [rows]=await db.query(`SELECT e.*,p.nombre periodo_nombre,g.nombre grupo_nombre,CONCAT(u.nombre,' ',u.apellido) profesor_nombre,ex.folio expediente_folio,ex.estado expediente_estado,ex.porcentaje_completo,s.id_seguro,s.estado seguro_estado,s.observaciones seguro_observaciones,s.ruta_comprobante,s.nombre_original seguro_archivo
+    const [rows]=await db.query(`SELECT e.*,p.nombre periodo_nombre,g.nombre grupo_nombre,CONCAT(u.nombre,' ',u.apellido) profesor_nombre,ex.folio expediente_folio,ex.estado expediente_estado,ex.porcentaje_completo,
+      s.id_seguro,s.estado seguro_estado,s.observaciones seguro_observaciones,s.ruta_comprobante,s.nombre_original seguro_archivo,
+      s.numero_seguro,s.folio_pago,s.fecha_pago,s.vigencia_inicio,s.vigencia_fin,s.monto
       FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN usuarios u ON u.id_usuario=e.id_profesor LEFT JOIN expedientes_estadia ex ON ex.id_estadia=e.id_estadia LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia WHERE e.id_estudiante=? ORDER BY e.creada_en DESC LIMIT 1`,[req.usuario.id_usuario]);
     if(!rows.length) return res.json({ok:true,estadia:null});
     const estadia=rows[0];
@@ -291,7 +293,7 @@ exports.guardarSeguro = async (req,res) => {
   const b=req.body;
   try {
     await db.query(`INSERT INTO seguros_facultativos (id_estadia,numero_seguro,folio_pago,fecha_pago,vigencia_inicio,vigencia_fin,monto,ruta_comprobante,mime_type,nombre_original,estado)
-      VALUES (?,?,?,?,?,?,?,?,?,?,'pendiente') ON CONFLICT (id_estadia) DO UPDATE SET numero_seguro=EXCLUDED.numero_seguro,folio_pago=EXCLUDED.folio_pago,fecha_pago=EXCLUDED.fecha_pago,vigencia_inicio=EXCLUDED.vigencia_inicio,vigencia_fin=EXCLUDED.vigencia_fin,monto=EXCLUDED.monto,ruta_comprobante=EXCLUDED.ruta_comprobante,mime_type=EXCLUDED.mime_type,nombre_original=EXCLUDED.nombre_original,estado='pendiente',observaciones=NULL,validado_por=NULL,validado_en=NULL`,
+      VALUES (?,?,?,?,?,?,?,?,?,?,'en_revision') ON CONFLICT (id_estadia) DO UPDATE SET numero_seguro=EXCLUDED.numero_seguro,folio_pago=EXCLUDED.folio_pago,fecha_pago=EXCLUDED.fecha_pago,vigencia_inicio=EXCLUDED.vigencia_inicio,vigencia_fin=EXCLUDED.vigencia_fin,monto=EXCLUDED.monto,ruta_comprobante=EXCLUDED.ruta_comprobante,mime_type=EXCLUDED.mime_type,nombre_original=EXCLUDED.nombre_original,estado='en_revision',observaciones=NULL,validado_por=NULL,validado_en=NULL`,
       [est[0].id_estadia,b.numero_seguro||null,b.folio_pago||null,b.fecha_pago||null,b.vigencia_inicio||null,b.vigencia_fin||null,b.monto||null,filePath(req.file),req.file.mimetype,req.file.originalname]);
     res.json({ok:true});
   } catch(e){res.status(500).json({ok:false,mensaje:'No se pudo registrar el seguro.'});}
@@ -299,11 +301,27 @@ exports.guardarSeguro = async (req,res) => {
 
 exports.listarSeguros = async (req,res) => {
   if (!requireRoles(req,res,[1,6])) return;
-  try { const [rows]=await db.query(`SELECT s.*,e.id_estudiante,es.matricula,u.nombre,u.apellido,u.correo,e.proyecto_titulo,e.empresa_razon_social,p.nombre periodo_nombre FROM seguros_facultativos s JOIN estadias e ON e.id_estadia=s.id_estadia JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN periodos_estadia p ON p.id_periodo=e.id_periodo ORDER BY s.creado_en DESC`); res.json({ok:true,seguros:rows}); }
-  catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los seguros.'});}
+  try {
+    const [rows]=await db.query(`SELECT
+      s.id_seguro,s.numero_seguro,s.folio_pago,s.fecha_pago,s.vigencia_inicio,s.vigencia_fin,s.monto,
+      s.ruta_comprobante,s.mime_type,s.nombre_original,s.observaciones,s.validado_por,s.validado_en,
+      COALESCE(s.estado,'sin_registrar') estado,
+      e.id_estadia,e.id_estudiante,e.proyecto_titulo,e.empresa_razon_social,e.horario_laboral,
+      es.matricula,u.nombre,u.apellido,u.correo,
+      p.nombre periodo_nombre,g.nombre grupo_nombre
+      FROM estadias e
+      JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
+      JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
+      JOIN grupos_estadia g ON g.id_grupo=e.id_grupo
+      LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia
+      ORDER BY p.fecha_inicio DESC,g.nombre,u.apellido,u.nombre`);
+    res.json({ok:true,seguros:rows});
+  }
+  catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los seguros.'});}
 };
 exports.validarSeguro = async (req,res) => {
-  if (!requireRoles(req,res,[1,6])) return;
+  if (!requireRoles(req,res,[6])) return;
   const {estado,observaciones}=req.body;
   if(!['en_revision','validado','requiere_correccion','rechazado'].includes(estado)) return res.status(400).json({ok:false,mensaje:'Estado inválido.'});
   try { await db.query('UPDATE seguros_facultativos SET estado=?,observaciones=?,validado_por=?,validado_en=CURRENT_TIMESTAMP WHERE id_seguro=?',[estado,observaciones||null,req.usuario.id_usuario,req.params.id]);
@@ -546,7 +564,12 @@ exports.gruposProfesor = async (req,res) => {
 
 exports.detalleGrupoProfesor = async (req,res) => {
   if(!requireRoles(req,res,[4])) return;
-  try{const [g]=await db.query('SELECT * FROM grupos_estadia WHERE id_grupo=? AND id_profesor=? LIMIT 1',[req.params.id,req.usuario.id_usuario]);if(!g.length)return res.status(404).json({ok:false,mensaje:'Grupo no encontrado.'});const [alumnos]=await db.query(`SELECT e.id_estudiante,e.matricula,e.carrera,u.nombre,u.apellido,u.correo,u.telefono,es.id_estadia,es.empresa_razon_social,es.responsable_nombre,es.horario_laboral,es.proyecto_titulo,es.estado,es.memoria_final_ruta,es.memoria_final_habilitada,
+  try{const [g]=await db.query('SELECT * FROM grupos_estadia WHERE id_grupo=? AND id_profesor=? LIMIT 1',[req.params.id,req.usuario.id_usuario]);if(!g.length)return res.status(404).json({ok:false,mensaje:'Grupo no encontrado.'});const [alumnos]=await db.query(`SELECT e.id_estudiante,e.matricula,e.carrera,u.nombre,u.apellido,u.correo,u.telefono,
+      es.id_estadia,es.empresa_razon_social,es.empresa_rfc,es.empresa_giro,es.empresa_domicilio,es.empresa_ubicacion,es.empresa_telefono,es.empresa_correo,
+      es.responsable_nombre,es.responsable_cargo,es.responsable_correo,es.responsable_telefono,es.horario_laboral,
+      es.proyecto_titulo,es.proyecto_problematica,es.proyecto_objetivo_general,es.proyecto_objetivos_especificos,es.proyecto_justificacion,
+      es.proyecto_alcance,es.proyecto_actividades,es.proyecto_entregables,es.fecha_inicio,es.fecha_fin,
+      es.estado,es.memoria_final_ruta,es.memoria_final_habilitada,
       (SELECT ROUND(AVG(x.calificacion),2) FROM (SELECT DISTINCT ON (fa.numero_avance) r.calificacion,fa.numero_avance FROM entregas_avances_estadia ea JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance JOIN revisiones_avances_estadia r ON r.id_entrega=ea.id_entrega WHERE ea.id_estadia=es.id_estadia ORDER BY fa.numero_avance,r.revisado_en DESC) x) promedio_estadia FROM grupo_estudiantes_estadia ge JOIN estudiantes e ON e.id_estudiante=ge.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante LEFT JOIN estadias es ON es.id_grupo=ge.id_grupo AND es.id_estudiante=e.id_estudiante WHERE ge.id_grupo=? ORDER BY u.apellido,u.nombre`,[req.params.id]);res.json({ok:true,grupo:g[0],alumnos});}
   catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar el grupo.'});}
 };

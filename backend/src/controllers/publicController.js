@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '6.2.0-estadias-asignacion-grupos';
+const APP_VERSION = '6.3.0-estadias-experiencia-institucional';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);

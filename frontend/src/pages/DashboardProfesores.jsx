@@ -7,6 +7,7 @@ import '../CSS/DashboardProfesores.css';
 import { API_BASE, buildFileUrl } from '../config/api';
 import DashboardInsights from '../components/DashboardInsights';
 import AppIcon from '../components/AppIcon';
+import { showToast, confirmDialog } from '../components/InstitutionalUI';
 
 const initials = (name) =>
   name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || 'PR';
@@ -212,13 +213,13 @@ export default function DashboardProfesores() {
       if (perfilFoto) fd.append('foto_perfil', perfilFoto);
       const res = await fetch(`${API_BASE}/profesor/perfil`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: fd });
       const data = await res.json();
-      if (!data.ok) return alert(data.mensaje || 'No se pudo actualizar el perfil');
+      if (!data.ok) return showToast(data.mensaje || 'No se pudo actualizar el perfil',{type:'error'});
       localStorage.setItem('user', JSON.stringify({ ...user, ...data.usuario }));
-      alert('Perfil actualizado correctamente');
+      showToast('Perfil actualizado correctamente',{type:'success'});
       setPerfilFoto(null);
       cargarPerfilProfesor();
     } catch (error) {
-      alert('Error de conexión al actualizar perfil');
+      showToast('Error de conexión al actualizar perfil',{type:'error'});
     }
   };
 
@@ -237,21 +238,21 @@ export default function DashboardProfesores() {
 
   const subirHorario = async (e) => {
     e.preventDefault();
-    if (!horarioForm.titulo || !horarioFile) return alert('Título y archivo PDF o imagen son obligatorios');
+    if (!horarioForm.titulo || !horarioFile) return showToast('Título y archivo PDF o imagen son obligatorios',{type:'warning'});
     const fd = new FormData();
     fd.append('titulo', horarioForm.titulo);
     fd.append('descripcion', horarioForm.descripcion);
     fd.append('ruta_pdf', horarioFile);
     const res = await fetch(`${API_BASE}/profesor/horarios`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
     const data = await res.json();
-    if (!data.ok) return alert(data.mensaje || 'No se pudo subir el horario');
+    if (!data.ok) return showToast(data.mensaje || 'No se pudo subir el horario',{type:'error'});
     setHorarioForm({ titulo: '', descripcion: '' });
     setHorarioFile(null);
     cargarHorarios();
   };
 
   const eliminarHorario = async (id) => {
-    if (!window.confirm('¿Eliminar este horario?')) return;
+    if (!await confirmDialog({title:'Eliminar horario',message:'Esta acción retirará el horario seleccionado.',confirmText:'Eliminar',tone:'danger'})) return;
     await fetch(`${API_BASE}/profesor/horarios/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     cargarHorarios();
   };
@@ -364,7 +365,7 @@ export default function DashboardProfesores() {
   };
 
   const handleEliminarProyecto = async (id) => {
-    const confirmar = window.confirm('¿Seguro que deseas eliminar este proyecto?');
+    const confirmar = await confirmDialog({title:'Eliminar proyecto',message:'Esta acción eliminará el proyecto seleccionado.',confirmText:'Eliminar',tone:'danger'});
     if (!confirmar) return;
 
     try {

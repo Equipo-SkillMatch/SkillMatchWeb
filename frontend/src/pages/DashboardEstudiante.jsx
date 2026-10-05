@@ -7,6 +7,7 @@ import '../CSS/DashboardEstudiantes.css';
 import { API_BASE, buildFileUrl } from '../config/api';
 import DashboardInsights from '../components/DashboardInsights';
 import AppIcon from '../components/AppIcon';
+import { showToast, confirmDialog, promptDialog } from '../components/InstitutionalUI';
 
 const initials = (name) =>
   name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || 'ES';
@@ -624,7 +625,7 @@ export default function DashboardEstudiante() {
   };
 
   const handleAgregarColaborador = async (id_proyecto) => {
-    if (!nuevoColaboradorCorreo.trim()) return alert("Por favor ingresa un correo.");
+    if (!nuevoColaboradorCorreo.trim()) return showToast('Por favor ingresa un correo.',{type:'warning'});
     
     try {
       const res = await fetch(`${API_BASE}/estudiante/proyectos/${id_proyecto}/colaboradores`, {
@@ -640,17 +641,17 @@ export default function DashboardEstudiante() {
       if (data.ok) {
         setNuevoColaboradorCorreo('');
         cargarColaboradores(id_proyecto); 
-        alert("Colaborador agregado con éxito.");
+        showToast('Colaborador agregado con éxito.',{type:'success'});
       } else {
-        alert(data.mensaje || "Error al agregar colaborador.");
+        showToast(data.mensaje || 'Error al agregar colaborador.',{type:'error'});
       }
     } catch (error) {
-      alert("Error de red al intentar agregar al colaborador.");
+      showToast('Error de red al intentar agregar al colaborador.',{type:'error'});
     }
   };
 
   const handleEliminarColaborador = async (id_proyecto, id_colaborador) => {
-    const confirmar = window.confirm("¿Seguro que deseas eliminar a este compañero del proyecto?");
+    const confirmar = await confirmDialog({title:'Eliminar colaborador',message:'El colaborador dejará de estar asociado a este proyecto.',confirmText:'Eliminar',tone:'danger'});
     if (!confirmar) return;
 
     try {
@@ -663,10 +664,10 @@ export default function DashboardEstudiante() {
       if (data.ok) {
         cargarColaboradores(id_proyecto); 
       } else {
-        alert(data.mensaje || "Error al eliminar colaborador.");
+        showToast(data.mensaje || 'Error al eliminar colaborador.',{type:'error'});
       }
     } catch (error) {
-      alert("Error de red al intentar eliminar.");
+      showToast('Error de red al intentar eliminar.',{type:'error'});
     }
   };
 
@@ -808,10 +809,10 @@ export default function DashboardEstudiante() {
   };
 
   const handleEliminarCuenta = async () => {
-    const confirmar = window.confirm('¿Seguro que deseas desactivar tu cuenta? Ya no podrás iniciar sesión con este usuario.');
+    const confirmar = await confirmDialog({title:'Desactivar cuenta',message:'Después de desactivarla ya no podrás iniciar sesión con este usuario.',confirmText:'Continuar',tone:'danger'});
     if (!confirmar) return;
 
-    const confirmacionFinal = window.prompt('Para confirmar la baja de la cuenta escribe: ELIMINAR');
+    const confirmacionFinal = await promptDialog({title:'Confirmar baja de cuenta',message:'Para confirmar esta acción escribe ELIMINAR.',label:'Confirmación',placeholder:'ELIMINAR',required:true,confirmText:'Desactivar cuenta'});
     if (confirmacionFinal !== 'ELIMINAR') {
       setProfileMessage({ type: 'error', text: 'La baja de cuenta fue cancelada.' });
       return;
@@ -967,7 +968,7 @@ export default function DashboardEstudiante() {
   };
 
   const handleEliminarProyecto = async (id) => {
-    const confirmar = window.confirm('¿Seguro que deseas eliminar este proyecto?');
+    const confirmar = await confirmDialog({title:'Eliminar proyecto',message:'El proyecto y su información asociada se eliminarán.',confirmText:'Eliminar',tone:'danger'});
     if (!confirmar) return;
 
     try {
@@ -1027,7 +1028,7 @@ export default function DashboardEstudiante() {
   };
 
   const handleEliminarEvidencia = async (id) => {
-    const confirmar = window.confirm('¿Seguro que deseas eliminar esta evidencia?');
+    const confirmar = await confirmDialog({title:'Eliminar evidencia',message:'La evidencia seleccionada será eliminada.',confirmText:'Eliminar',tone:'danger'});
     if (!confirmar) return;
 
     try {
@@ -1080,13 +1081,13 @@ export default function DashboardEstudiante() {
         setVacantes(vacantes.map(v => 
           v.id_vacante === id_vacante ? { ...v, estado_postulacion: 'pendiente' } : v
         ));
-        alert("¡Te has postulado correctamente a esta vacante! La empresa revisará tu perfil.");
+        showToast('Te has postulado correctamente. La empresa revisará tu perfil.',{type:'success'});
       } else {
-        alert(data.mensaje || "Error al postularse");
+        showToast(data.mensaje || 'Error al postularse',{type:'error'});
       }
     } catch (error) {
       console.error("Error al postular:", error);
-      alert("Ocurrió un error al enviar tu postulación.");
+      showToast('Ocurrió un error al enviar tu postulación.',{type:'error'});
     }
   };
 
