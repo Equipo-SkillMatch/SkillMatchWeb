@@ -477,7 +477,7 @@ exports.generarGruposEstadia = async (req,res) => {
   const idPeriodo=Number(req.params.id);
   const conn=await db.getConnection();
   try{
-    const [seleccion]=await conn.query(`SELECT pge.id_grupo_escolar,ge.id_carrera,ge.generacion,c.nombre carrera FROM periodo_grupos_escolares pge JOIN grupos_escolares ge ON ge.id_grupo_escolar=pge.id_grupo_escolar JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE pge.id_periodo=?`,[idPeriodo]);
+    const [seleccion]=await conn.query(`SELECT pge.id_grupo_escolar,ge.id_carrera,ge.generacion,ge.nombre grupo_escolar_nombre,c.nombre carrera FROM periodo_grupos_escolares pge JOIN grupos_escolares ge ON ge.id_grupo_escolar=pge.id_grupo_escolar JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE pge.id_periodo=?`,[idPeriodo]);
     if(!seleccion.length) return res.status(400).json({ok:false,mensaje:'Selecciona primero los grupos escolares que salen a estadía.'});
     const carreras=[...new Map(seleccion.map(x=>[Number(x.id_carrera),x])).values()];
     const [existentes]=await conn.query('SELECT COUNT(*) total FROM estadias WHERE id_periodo=?',[idPeriodo]);
@@ -486,9 +486,15 @@ exports.generarGruposEstadia = async (req,res) => {
     await conn.query('DELETE FROM grupos_estadia WHERE id_periodo=?',[idPeriodo]);
     let creados=0;
     for(const car of carreras){
-      const gruposOrigen=seleccion.filter(x=>Number(x.id_carrera)===Number(car.id_carrera)).map(x=>x.id_grupo_escolar);
-      const marks=gruposOrigen.map(()=>'?').join(',');
-      const [alumnos]=await conn.query(`SELECT e.id_estudiante FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante WHERE e.id_grupo_escolar IN (${marks}) AND u.estado='activo' ORDER BY e.id_estudiante`,gruposOrigen);
+      const seleccionCarrera=seleccion.filter(x=>Number(x.id_carrera)===Number(car.id_carrera));
+      const gruposOrigen=seleccionCarrera.map(x=>x.id_grupo_escolar);
+      const nombresOrigen=seleccionCarrera.map(x=>String(x.grupo_escolar_nombre||'').trim()).filter(Boolean);
+      const marksIds=gruposOrigen.map(()=>'?').join(',');
+      const marksNames=nombresOrigen.map(()=>'?').join(',');
+      const filtros=[]; const params=[];
+      if(gruposOrigen.length){filtros.push(`e.id_grupo_escolar IN (${marksIds})`);params.push(...gruposOrigen);}
+      if(nombresOrigen.length){filtros.push(`LOWER(TRIM(COALESCE(e.grupo,''))) IN (${marksNames})`);params.push(...nombresOrigen.map(x=>x.toLowerCase()));}
+      const [alumnos]=await conn.query(`SELECT DISTINCT e.id_estudiante FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante WHERE (${filtros.join(' OR ')}) AND u.estado='activo' ORDER BY e.id_estudiante`,params);
       const [tutores]=await conn.query(`SELECT p.id_profesor FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor WHERE p.tutor_estadia=TRUE AND p.id_carrera=? AND u.estado='activo' ORDER BY p.id_profesor`,[car.id_carrera]);
       if(!alumnos.length) continue;
       const gruposNecesarios=Math.ceil(alumnos.length/6);
@@ -673,17 +679,22 @@ exports.alumnosDisponiblesGrupoEstadia = async (req,res) => {
     const [g]=await db.query('SELECT id_grupo,id_periodo,id_carrera FROM grupos_estadia WHERE id_grupo=?',[req.params.id]);
     if(!g.length) return res.status(404).json({ok:false,mensaje:'Grupo de estadía no encontrado.'});
     const grupo=g[0];
-    const [rows]=await db.query(`SELECT e.id_estudiante,e.matricula,u.nombre,u.apellido,u.correo,ge.nombre grupo_escolar
+    const params=[grupo.id_periodo];
+    let carreraSql='';
+    if(grupo.id_carrera){
+      carreraSql=` AND (ge.id_carrera=? OR LOWER(TRIM(COALESCE(e.carrera,'')))=LOWER(TRIM(COALESCE((SELECT nombre FROM carreras WHERE id_carrera=?),''))))`;
+      params.unshift(grupo.id_carrera,grupo.id_carrera);
+    }
+    const [rows]=await db.query(`SELECT e.id_estudiante,e.matricula,u.nombre,u.apellido,u.correo,COALESCE(ge.nombre,e.grupo) grupo_escolar
       FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante
       LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar
-      WHERE u.estado='activo'
-        AND (? IS NULL OR ge.id_carrera=?)
+      WHERE u.estado='activo'${carreraSql}
         AND NOT EXISTS (
           SELECT 1 FROM grupo_estudiantes_estadia gee
           JOIN grupos_estadia gg ON gg.id_grupo=gee.id_grupo
           WHERE gee.id_estudiante=e.id_estudiante AND gg.id_periodo=?
         )
-      ORDER BY ge.nombre,u.apellido,u.nombre`,[grupo.id_carrera,grupo.id_carrera,grupo.id_periodo]);
+      ORDER BY COALESCE(ge.nombre,e.grupo),u.apellido,u.nombre`,params);
     res.json({ok:true,alumnos:rows});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los alumnos disponibles.'});}
 };
@@ -697,9 +708,14 @@ exports.agregarAlumnoGrupoEstadia = async (req,res) => {
     if(!g.length) return res.status(404).json({ok:false,mensaje:'Grupo no encontrado.'});
     const [count]=await db.query('SELECT COUNT(*) total FROM grupo_estudiantes_estadia WHERE id_grupo=?',[idGrupo]);
     if(Number(count[0]?.total||0)>=Number(g[0].max_alumnos||6)) return res.status(400).json({ok:false,mensaje:'El grupo ya alcanzó su máximo de alumnos.'});
-    const [al]=await db.query(`SELECT e.id_estudiante,ge.id_carrera FROM estudiantes e LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar WHERE e.id_estudiante=?`,[idEstudiante]);
+    const [al]=await db.query(`SELECT e.id_estudiante,ge.id_carrera,e.carrera,c.nombre carrera_grupo FROM estudiantes e LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar LEFT JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE e.id_estudiante=?`,[idEstudiante]);
     if(!al.length) return res.status(404).json({ok:false,mensaje:'Alumno no encontrado.'});
-    if(g[0].id_carrera && Number(al[0].id_carrera)!==Number(g[0].id_carrera)) return res.status(400).json({ok:false,mensaje:'El alumno debe pertenecer a la misma carrera del grupo de estadía.'});
+    if(g[0].id_carrera){
+      const [gc]=await db.query('SELECT nombre FROM carreras WHERE id_carrera=?',[g[0].id_carrera]);
+      const mismaPorId=Number(al[0].id_carrera)===Number(g[0].id_carrera);
+      const mismaPorTexto=String(al[0].carrera||'').trim().toLowerCase()===String(gc[0]?.nombre||'').trim().toLowerCase();
+      if(!mismaPorId&&!mismaPorTexto) return res.status(400).json({ok:false,mensaje:'El alumno debe pertenecer a la misma carrera del grupo de estadía.'});
+    }
     const [otro]=await db.query(`SELECT gg.nombre FROM grupo_estudiantes_estadia ge JOIN grupos_estadia gg ON gg.id_grupo=ge.id_grupo WHERE ge.id_estudiante=? AND gg.id_periodo=? LIMIT 1`,[idEstudiante,g[0].id_periodo]);
     if(otro.length) return res.status(409).json({ok:false,mensaje:`El alumno ya pertenece al grupo ${otro[0].nombre} en este periodo.`});
     await db.query('INSERT INTO grupo_estudiantes_estadia(id_grupo,id_estudiante) VALUES(?,?)',[idGrupo,idEstudiante]);
@@ -715,6 +731,19 @@ exports.quitarAlumnoGrupoEstadia = async (req,res) => {
     await db.query('DELETE FROM grupo_estudiantes_estadia WHERE id_grupo=? AND id_estudiante=?',[req.params.id,req.params.idEstudiante]);
     res.json({ok:true});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo retirar el alumno del grupo.'});}
+};
+
+exports.eliminarGrupoEstadia = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  const idGrupo=Number(req.params.id);
+  try{
+    const [g]=await db.query('SELECT id_grupo,nombre FROM grupos_estadia WHERE id_grupo=?',[idGrupo]);
+    if(!g.length) return res.status(404).json({ok:false,mensaje:'Grupo de estadía no encontrado.'});
+    const [est]=await db.query('SELECT COUNT(*) total FROM estadias WHERE id_grupo=?',[idGrupo]);
+    if(Number(est[0]?.total||0)>0) return res.status(409).json({ok:false,mensaje:'No se puede eliminar el grupo porque uno o más alumnos ya registraron información de su estadía. Primero elimina o reasigna esas estadías.'});
+    await db.query('DELETE FROM grupos_estadia WHERE id_grupo=?',[idGrupo]);
+    res.json({ok:true,mensaje:`Grupo ${g[0].nombre} eliminado.`});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo eliminar el grupo de estadía.'});}
 };
 
 exports.resumenV61 = async (req,res) => {

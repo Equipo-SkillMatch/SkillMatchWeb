@@ -403,7 +403,7 @@ export default function DashboardVinculacion() {
           <div className="nav-item" style={{ marginTop: 12, color: '#fca5a5' }} onClick={() => { localStorage.clear(); navigate('/'); }}>
             <span className="nav-icon"><AppIcon name="logout" /></span> Cerrar sesión
           </div>
-          <div className="sidebar-build">SkillMatch V6.0</div>
+          <div className="sidebar-build">SkillMatch V6.2</div>
         </div>
         <div className="sidebar-user">
           <div className="user-avatar">{initials(`${user.nombre || ''} ${user.apellido || ''}`)}</div>

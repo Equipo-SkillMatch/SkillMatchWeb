@@ -40,6 +40,7 @@ router.delete('/talleres/:id', controller.eliminarTaller);
 router.get('/grupos/:id/disponibles', controller.alumnosDisponiblesGrupoEstadia);
 router.post('/grupos/:id/alumnos-manual', controller.agregarAlumnoGrupoEstadia);
 router.delete('/grupos/:id/alumnos/:idEstudiante', controller.quitarAlumnoGrupoEstadia);
+router.delete('/grupos/:id', controller.eliminarGrupoEstadia);
 router.get('/resumen-v61', controller.resumenV61);
 
 router.get('/catalogos-v6', controller.catalogosV6);

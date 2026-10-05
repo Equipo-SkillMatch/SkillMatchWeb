@@ -80,8 +80,13 @@ export default function Registro() {
   };
   const handleGrupoLibre = (event) => {
     const grupo=event.target.value;
-    const match=gruposEscolares.find(g=>norm(g.nombre)===norm(grupo)&&(!estForm.carrera||norm(g.carrera)===norm(estForm.carrera)));
-    setEstForm(current=>({...current,grupo,id_grupo_escolar:match?String(match.id_grupo_escolar):''}));
+    const match=gruposEscolares.find(g=>norm(g.nombre)===norm(grupo));
+    setEstForm(current=>({
+      ...current,
+      grupo,
+      id_grupo_escolar:match?String(match.id_grupo_escolar):'',
+      carrera:match?.carrera||current.carrera,
+    }));
   };
 
   const submitRegistro = async (event) => {
@@ -221,7 +226,7 @@ export default function Registro() {
                 <div className="register-grid register-grid--3">
                   <label className="register-field"><span>Matrícula</span><input name="matricula" value={estForm.matricula} onChange={handleEst} placeholder="2023371089" required /></label>
                   <label className="register-field"><span>Cuatrimestre</span><select name="semestre" value={estForm.semestre} onChange={handleEst} required><option value="">Selecciona</option>{Array.from({ length: 11 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}°</option>)}</select></label>
-                  <label className="register-field"><span>Grupo</span><input name="grupo" list="grupos-escolares-list" value={estForm.grupo} onChange={handleGrupoLibre} placeholder="Escribe o selecciona tu grupo"/><datalist id="grupos-escolares-list">{gruposEscolares.filter(g=>!estForm.carrera||norm(g.carrera)===norm(estForm.carrera)).map(g=><option key={g.id_grupo_escolar} value={g.nombre}>{g.generacion?`${g.generacion} · `:''}{g.carrera}</option>)}</datalist><small>Puedes elegir un grupo dado de alta o escribirlo libremente.</small></label>
+                  <label className="register-field"><span>Grupo</span><input name="grupo" list="grupos-escolares-list" value={estForm.grupo} onChange={handleGrupoLibre} placeholder="Escribe o selecciona tu grupo"/><datalist id="grupos-escolares-list">{gruposEscolares.map(g=><option key={g.id_grupo_escolar} value={g.nombre}>{g.generacion?`${g.generacion} · `:''}{g.carrera}</option>)}</datalist><small>Al seleccionar un grupo registrado, SkillMatch completa automáticamente la carrera. También puedes escribir un grupo libremente.</small></label>
                 </div>
                 <div className="register-grid">
                   <label className="register-field"><span>Carrera</span><select name="carrera" value={estForm.carrera} onChange={handleEst} required><option value="">Selecciona tu carrera</option>{carrerasDefault.map((carrera) => <option key={carrera} value={carrera}>{carrera}</option>)}</select></label>
