@@ -62,4 +62,24 @@ router.post('/avances/:idFecha/enlace', controller.entregarEnlace);
 router.post('/mi-estadia/memoria-final', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirMemoriaFinal);
 router.put('/profesor/estadias/:idEstadia/memoria-final', controller.autorizarMemoriaFinal);
 
+
+// V7: directorio de empresas y evaluaciones estructuradas
+router.get('/empresas/buscar', controller.buscarEmpresaEstadia);
+router.get('/talleres/:numero/criterios', controller.criteriosTaller);
+router.get('/niveles-evaluacion', controller.listarNivelesEvaluacion);
+router.put('/niveles-evaluacion', controller.actualizarNivelesEvaluacion);
+router.get('/criterios-taller', controller.listarCriteriosUniversales);
+router.put('/criterios-taller/:numero', controller.actualizarCriteriosTaller);
+router.get('/profesor/entregas/:id/evaluacion', controller.detalleEvaluacionEntrega);
+router.post('/profesor/entregas/:id/evaluacion-criterios', controller.evaluarEntregaPorCriterios);
+router.post('/profesor/estadias/:idEstadia/evaluacion-empresa', controller.generarEvaluacionEmpresa);
+router.get('/profesor/evaluaciones-empresa', controller.evaluacionesEmpresaProfesor);
+router.get('/evaluaciones-empresa/:id', controller.detalleEvaluacionEmpresa);
+router.get('/empresa/practicantes', controller.practicantesEmpresa);
+router.post('/empresa/evaluaciones/:id/responder', controller.responderEvaluacionEmpresaCuenta);
+router.get('/estadias/:idEstadia/inicio-formal', controller.obtenerInicioFormal);
+router.put('/estadias/:idEstadia/inicio-formal', controller.actualizarInicioFormal);
+router.get('/estadias/:idEstadia/seguimientos', controller.listarSeguimientos);
+router.post('/estadias/:idEstadia/seguimientos', controller.crearSeguimiento);
+
 module.exports = router;

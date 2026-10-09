@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const crypto = require('crypto');
 const { uploadedFilePath } = require('../utils/fileUrl');
 
 const NIVEL_CALIFICACION = { SA: 8, DE: 9, AU: 10 };
@@ -19,11 +20,17 @@ function folioExpediente(idEstadia) {
 async function recalcularExpediente(idEstadia) {
   const [seg] = await db.query("SELECT estado FROM seguros_facultativos WHERE id_estadia=?", [idEstadia]);
   const [av] = await db.query("SELECT COUNT(DISTINCT fa.numero_avance) aprobados FROM entregas_avances_estadia ea JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance WHERE ea.id_estadia=? AND ea.estado='aprobado'", [idEstadia]);
-  const [mem] = await db.query("SELECT memoria_final_ruta FROM estadias WHERE id_estadia=?", [idEstadia]);
-  let porcentaje = 20;
-  if (seg[0]?.estado === 'validado') porcentaje += 20;
+  const [mem] = await db.query("SELECT memoria_final_ruta,empresa_razon_social,proyecto_titulo FROM estadias WHERE id_estadia=?", [idEstadia]);
+  let inicio=[], empresaEval=[];
+  try {[inicio] = await db.query("SELECT autorizado FROM inicio_formal_estadia WHERE id_estadia=?", [idEstadia]);} catch(_e) {}
+  try {[empresaEval] = await db.query("SELECT momento,respondida_en FROM evaluaciones_empresa_estadia WHERE id_estadia=?", [idEstadia]);} catch(_e) {}
+  let porcentaje = (mem[0]?.empresa_razon_social && mem[0]?.proyecto_titulo) ? 10 : 0;
+  if (inicio[0]?.autorizado) porcentaje += 10;
+  if (seg[0]?.estado === 'validado') porcentaje += 15;
   porcentaje += Math.min(3, Number(av[0]?.aprobados || 0)) * 15;
-  if (mem[0]?.memoria_final_ruta) porcentaje += 15;
+  if (empresaEval.some(e=>e.momento==='inicial' && e.respondida_en)) porcentaje += 5;
+  if (empresaEval.some(e=>e.momento==='final' && e.respondida_en)) porcentaje += 5;
+  if (mem[0]?.memoria_final_ruta) porcentaje += 10;
   porcentaje = Math.min(100, porcentaje);
   const estado = porcentaje >= 100 ? 'completo' : 'incompleto';
   await db.query('UPDATE expedientes_estadia SET porcentaje_completo=?, estado=?, actualizado_en=CURRENT_TIMESTAMP WHERE id_estadia=?', [porcentaje, estado, idEstadia]);
@@ -400,7 +407,22 @@ exports.detalleExpediente = async (req,res) => {
       FROM entregas_avances_estadia ea JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance
       LEFT JOIN LATERAL (SELECT * FROM revisiones_avances_estadia r WHERE r.id_entrega=ea.id_entrega ORDER BY r.revisado_en DESC LIMIT 1) rr ON TRUE
       WHERE ea.id_estadia=? ORDER BY fa.numero_avance,ea.version`,[expediente.id_estadia]);
-    res.json({ok:true,expediente,entregas});
+    let evaluacionesCriterios=[];let evaluacionesEmpresa=[];let seguimientos=[];let documentos=[];let inicioFormal=null;
+    try{[evaluacionesCriterios]=await db.query(`SELECT ec.*,ct.numero_taller,ct.criterio,ct.orden,ea.version FROM evaluaciones_criterios_taller ec JOIN criterios_taller_estadia ct ON ct.id_criterio_taller=ec.id_criterio_taller JOIN entregas_avances_estadia ea ON ea.id_entrega=ec.id_entrega WHERE ea.id_estadia=? ORDER BY ct.numero_taller,ct.orden`,[expediente.id_estadia]);}catch(_e){}
+    try{[evaluacionesEmpresa]=await db.query(`SELECT * FROM evaluaciones_empresa_estadia WHERE id_estadia=? ORDER BY CASE momento WHEN 'inicial' THEN 1 ELSE 2 END`,[expediente.id_estadia]);}catch(_e){}
+    try{[seguimientos]=await db.query(`SELECT s.*,CONCAT(u.nombre,' ',u.apellido) registrado_por_nombre FROM seguimientos_estadia s JOIN usuarios u ON u.id_usuario=s.registrado_por WHERE s.id_estadia=? ORDER BY s.fecha,s.creado_en`,[expediente.id_estadia]);}catch(_e){}
+    try{[documentos]=await db.query(`SELECT * FROM documentos_expediente_estadia WHERE id_estadia=? ORDER BY obligatorio DESC,tipo`,[expediente.id_estadia]);}catch(_e){}
+    try{const [ix]=await db.query(`SELECT i.*,CONCAT(u.nombre,' ',u.apellido) autorizado_por_nombre FROM inicio_formal_estadia i LEFT JOIN usuarios u ON u.id_usuario=i.autorizado_por WHERE i.id_estadia=? LIMIT 1`,[expediente.id_estadia]);inicioFormal=ix[0]||null;}catch(_e){}
+    const checklist=[
+      {tipo:'empresa_proyecto',nombre:'Empresa y proyecto de estadía',estado:expediente.empresa_razon_social&&expediente.proyecto_titulo?'completo':'pendiente'},
+      {tipo:'inicio_formal',nombre:'Inicio formal autorizado',estado:inicioFormal?.autorizado?'completo':'pendiente'},
+      {tipo:'seguro',nombre:'Seguro facultativo',estado:expediente.seguro_estado==='validado'?'completo':(expediente.seguro_estado||'pendiente')},
+      ...[1,2,3].map(n=>{const xs=entregas.filter(x=>Number(x.numero_avance)===n);const last=xs[xs.length-1];return {tipo:`taller_${n}`,nombre:`Taller ${n}`,estado:last?.estado||'pendiente',calificacion:last?.calificacion||null,nivel:last?.nivel||null};}),
+      {tipo:'empresa_eval_inicial',nombre:'Primera evaluación de la empresa',estado:evaluacionesEmpresa.some(e=>e.momento==='inicial'&&e.respondida_en)?'completo':'pendiente'},
+      {tipo:'empresa_eval_final',nombre:'Evaluación final de la empresa',estado:evaluacionesEmpresa.some(e=>e.momento==='final'&&e.respondida_en)?'completo':'pendiente'},
+      {tipo:'memoria_final',nombre:'Memoria técnica final',estado:expediente.memoria_final_ruta?'completo':(expediente.memoria_final_habilitada?'habilitada':'pendiente')}
+    ];
+    res.json({ok:true,expediente,entregas,evaluacionesCriterios,evaluacionesEmpresa,seguimientos,documentos,inicioFormal,checklist});
   } catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo cargar el expediente completo.'});}
 };
 
@@ -626,18 +648,36 @@ exports.registrarMiEstadia = async (req,res) => {
   const c=ctx[0], b=req.body;
   if(!b.empresa_razon_social || !b.responsable_nombre || !b.proyecto_titulo) return res.status(400).json({ok:false,mensaje:'Empresa, responsable y título del proyecto son obligatorios.'});
   try{
-    const [emp]=await db.query(`SELECT e.id_empresa,e.razon_social,e.rfc,e.giro,e.domicilio,e.ubicacion,u.telefono,u.correo FROM empresas e JOIN usuarios u ON u.id_usuario=e.id_empresa WHERE e.estado='habilitada' AND LOWER(TRIM(e.razon_social))=LOWER(TRIM(?)) LIMIT 1`,[b.empresa_razon_social]);
+    const [emp]=await db.query(`SELECT e.id_empresa,e.razon_social,e.rfc,e.giro,e.domicilio,e.ubicacion,u.telefono,u.correo,
+      e.responsable_nombre,e.responsable_apellido,e.responsable_cargo,e.responsable_correo,e.responsable_telefono
+      FROM empresas e JOIN usuarios u ON u.id_usuario=e.id_empresa
+      WHERE e.estado='habilitada' AND (
+        (COALESCE(TRIM(?),'')<>'' AND UPPER(TRIM(COALESCE(e.rfc,'')))=UPPER(TRIM(?))) OR
+        LOWER(TRIM(e.razon_social))=LOWER(TRIM(?))
+      ) ORDER BY CASE WHEN UPPER(TRIM(COALESCE(e.rfc,'')))=UPPER(TRIM(COALESCE(?,''))) THEN 0 ELSE 1 END LIMIT 1`,
+      [b.empresa_rfc||'',b.empresa_rfc||'',b.empresa_razon_social,b.empresa_rfc||'']);
     const empresa=emp[0]||{};
+    const empresaData={
+      razon_social: empresa.razon_social||b.empresa_razon_social,
+      rfc: empresa.rfc||b.empresa_rfc||null,
+      giro: empresa.giro||b.empresa_giro||null,
+      domicilio: empresa.domicilio||b.empresa_domicilio||null,
+      ubicacion: empresa.ubicacion||b.empresa_ubicacion||null,
+      telefono: empresa.telefono||b.empresa_telefono||null,
+      correo: empresa.correo||b.empresa_correo||null
+    };
     const conn=await db.getConnection();
     try{
       await conn.beginTransaction();
       const [r]=await conn.query(`INSERT INTO estadias (id_periodo,id_estudiante,id_grupo,id_profesor,id_empresa,empresa_externa,empresa_razon_social,empresa_rfc,empresa_giro,empresa_domicilio,empresa_ubicacion,empresa_telefono,empresa_correo,responsable_nombre,responsable_cargo,responsable_correo,responsable_telefono,proyecto_titulo,proyecto_problematica,proyecto_objetivo_general,proyecto_objetivos_especificos,proyecto_justificacion,proyecto_alcance,proyecto_actividades,proyecto_entregables,fecha_inicio,fecha_fin,horario_laboral,estado)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'documentacion_pendiente')
         ON CONFLICT (id_periodo,id_estudiante) DO UPDATE SET id_empresa=EXCLUDED.id_empresa,empresa_externa=EXCLUDED.empresa_externa,empresa_razon_social=EXCLUDED.empresa_razon_social,empresa_rfc=EXCLUDED.empresa_rfc,empresa_giro=EXCLUDED.empresa_giro,empresa_domicilio=EXCLUDED.empresa_domicilio,empresa_ubicacion=EXCLUDED.empresa_ubicacion,empresa_telefono=EXCLUDED.empresa_telefono,empresa_correo=EXCLUDED.empresa_correo,responsable_nombre=EXCLUDED.responsable_nombre,responsable_cargo=EXCLUDED.responsable_cargo,responsable_correo=EXCLUDED.responsable_correo,responsable_telefono=EXCLUDED.responsable_telefono,proyecto_titulo=EXCLUDED.proyecto_titulo,proyecto_problematica=EXCLUDED.proyecto_problematica,proyecto_objetivo_general=EXCLUDED.proyecto_objetivo_general,proyecto_objetivos_especificos=EXCLUDED.proyecto_objetivos_especificos,proyecto_justificacion=EXCLUDED.proyecto_justificacion,proyecto_alcance=EXCLUDED.proyecto_alcance,proyecto_actividades=EXCLUDED.proyecto_actividades,proyecto_entregables=EXCLUDED.proyecto_entregables,fecha_inicio=EXCLUDED.fecha_inicio,fecha_fin=EXCLUDED.fecha_fin,horario_laboral=EXCLUDED.horario_laboral,actualizada_en=CURRENT_TIMESTAMP RETURNING id_estadia`,
-        [c.id_periodo,estudiante.id_estudiante,c.id_grupo,c.id_profesor,empresa.id_empresa||null,!empresa.id_empresa,b.empresa_razon_social,empresa.rfc||null,empresa.giro||null,empresa.domicilio||null,empresa.ubicacion||null,empresa.telefono||null,empresa.correo||null,b.responsable_nombre,b.responsable_cargo||null,b.responsable_correo||null,b.responsable_telefono||null,b.proyecto_titulo,b.proyecto_problematica||null,b.proyecto_objetivo_general||null,b.proyecto_objetivos_especificos||null,b.proyecto_justificacion||null,b.proyecto_alcance||null,b.proyecto_actividades||null,b.proyecto_entregables||null,b.fecha_inicio||null,b.fecha_fin||null,b.horario_laboral||null]);
+        [c.id_periodo,estudiante.id_estudiante,c.id_grupo,c.id_profesor,empresa.id_empresa||null,!empresa.id_empresa,empresaData.razon_social,empresaData.rfc,empresaData.giro,empresaData.domicilio,empresaData.ubicacion,empresaData.telefono,empresaData.correo,b.responsable_nombre||empresa.responsable_nombre||null,b.responsable_cargo||empresa.responsable_cargo||null,b.responsable_correo||empresa.responsable_correo||null,b.responsable_telefono||empresa.responsable_telefono||null,b.proyecto_titulo,b.proyecto_problematica||null,b.proyecto_objetivo_general||null,b.proyecto_objetivos_especificos||null,b.proyecto_justificacion||null,b.proyecto_alcance||null,b.proyecto_actividades||null,b.proyecto_entregables||null,b.fecha_inicio||null,b.fecha_fin||null,b.horario_laboral||null]);
       const idEstadia=r.rows?.[0]?.id_estadia||r.insertId;
       const [ex]=await conn.query('SELECT id_expediente FROM expedientes_estadia WHERE id_estadia=?',[idEstadia]);
       if(!ex.length) await conn.query('INSERT INTO expedientes_estadia(id_estadia,folio,estado,porcentaje_completo) VALUES(?,?,?,?)',[idEstadia,folioExpediente(idEstadia),'incompleto',20]);
+      await conn.query(`INSERT INTO inicio_formal_estadia(id_estadia,fecha_inicio_real,autorizado) VALUES(?,?,FALSE)
+        ON CONFLICT(id_estadia) DO UPDATE SET fecha_inicio_real=COALESCE(EXCLUDED.fecha_inicio_real,inicio_formal_estadia.fecha_inicio_real)`,[idEstadia,b.fecha_inicio||null]);
       await conn.commit();res.json({ok:true,id_estadia:idEstadia,empresa_en_directorio:Boolean(empresa.id_empresa)});
     }catch(e){await conn.rollback();throw e;}finally{conn.release();}
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo registrar la estadía.'});}
@@ -779,3 +819,286 @@ exports.resumenV61 = async (req,res) => {
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar las gráficas.'});}
 };
 
+
+
+// ============================================================================
+// V7 - Empresa por RFC/nombre, evaluación por criterio y evaluación empresarial
+// ============================================================================
+
+exports.buscarEmpresaEstadia = async (req,res) => {
+  if(!requireRoles(req,res,[2])) return;
+  const q=String(req.query.q||'').trim();
+  if(q.length<2) return res.json({ok:true,empresa:null,coincidencias:[]});
+  try{
+    const [rows]=await db.query(`SELECT e.id_empresa,e.razon_social,e.rfc,e.giro,e.domicilio,e.ubicacion,
+      u.telefono,u.correo,e.responsable_nombre,e.responsable_apellido,e.responsable_cargo,
+      e.responsable_correo,e.responsable_telefono
+      FROM empresas e JOIN usuarios u ON u.id_usuario=e.id_empresa
+      WHERE e.estado='habilitada' AND (
+        UPPER(TRIM(COALESCE(e.rfc,'')))=UPPER(TRIM(?)) OR
+        LOWER(e.razon_social) LIKE LOWER(?)
+      )
+      ORDER BY CASE WHEN UPPER(TRIM(COALESCE(e.rfc,'')))=UPPER(TRIM(?)) THEN 0 ELSE 1 END,e.razon_social
+      LIMIT 8`,[q,`%${q}%`,q]);
+    return res.json({ok:true,empresa:rows.length===1?rows[0]:null,coincidencias:rows});
+  }catch(e){console.error(e);return res.status(500).json({ok:false,mensaje:'No se pudo consultar el directorio de empresas.'});}
+};
+
+exports.criteriosTaller = async (req,res) => {
+  const numero=Number(req.params.numero);
+  if(![1,2,3].includes(numero)) return res.status(400).json({ok:false,mensaje:'Taller inválido.'});
+  try{
+    const [criterios]=await db.query('SELECT * FROM criterios_taller_estadia WHERE numero_taller=? AND activo=TRUE ORDER BY orden,id_criterio_taller',[numero]);
+    const [niveles]=await db.query('SELECT * FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY orden');
+    res.json({ok:true,criterios,niveles});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los criterios.'});}
+};
+
+exports.evaluarEntregaPorCriterios = async (req,res) => {
+  if(!requireRoles(req,res,[4])) return;
+  const idEntrega=Number(req.params.id);
+  const respuestas=Array.isArray(req.body.criterios)?req.body.criterios:[];
+  const observaciones=String(req.body.observaciones||'').trim()||null;
+  if(!respuestas.length) return res.status(400).json({ok:false,mensaje:'Evalúa todos los criterios del taller.'});
+  const conn=await db.getConnection();
+  try{
+    const [ent]=await conn.query(`SELECT ea.id_entrega,ea.id_estadia,fa.numero_avance,es.id_profesor
+      FROM entregas_avances_estadia ea
+      JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance
+      JOIN estadias es ON es.id_estadia=ea.id_estadia
+      WHERE ea.id_entrega=? AND es.id_profesor=? LIMIT 1`,[idEntrega,req.usuario.id_usuario]);
+    if(!ent.length) return res.status(403).json({ok:false,mensaje:'Esta entrega no pertenece a uno de tus alumnos.'});
+    const numero=Number(ent[0].numero_avance);
+    const [esperados]=await conn.query('SELECT id_criterio_taller,peso FROM criterios_taller_estadia WHERE numero_taller=? AND activo=TRUE ORDER BY orden',[numero]);
+    if(respuestas.length!==esperados.length) return res.status(400).json({ok:false,mensaje:'Debes evaluar todos los criterios configurados.'});
+    await conn.beginTransaction();
+    let total=0,pesoTotal=0;
+    for(const c of esperados){
+      const r=respuestas.find(x=>Number(x.id_criterio_taller)===Number(c.id_criterio_taller));
+      if(!r) throw new Error('Falta criterio');
+      const [nivel]=await conn.query('SELECT codigo,valor FROM niveles_evaluacion_estadia WHERE codigo=? AND activo=TRUE',[String(r.codigo_nivel||'').toUpperCase()]);
+      if(!nivel.length) throw new Error('Nivel inválido');
+      const valor=Number(nivel[0].valor||0), peso=Number(c.peso||0);
+      total+=valor*peso; pesoTotal+=peso;
+      await conn.query(`INSERT INTO evaluaciones_criterios_taller
+        (id_entrega,id_criterio_taller,id_profesor,codigo_nivel,valor,entregado,completo,observacion,evaluado_en)
+        VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(id_entrega,id_criterio_taller) DO UPDATE SET
+        id_profesor=EXCLUDED.id_profesor,codigo_nivel=EXCLUDED.codigo_nivel,valor=EXCLUDED.valor,
+        entregado=EXCLUDED.entregado,completo=EXCLUDED.completo,observacion=EXCLUDED.observacion,evaluado_en=CURRENT_TIMESTAMP`,
+        [idEntrega,c.id_criterio_taller,req.usuario.id_usuario,nivel[0].codigo,valor,r.entregado!==false,Boolean(r.completo),r.observacion||null]);
+    }
+    const promedio=pesoTotal?Math.round((total/pesoTotal)*100)/100:0;
+    const [nearest]=await conn.query(`SELECT codigo FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY ABS(valor-?) ASC,orden DESC LIMIT 1`,[promedio]);
+    const codigo=nearest[0]?.codigo||'NA';
+    await conn.query(`INSERT INTO revisiones_avances_estadia(id_entrega,id_profesor,nivel,calificacion,observaciones,requiere_correccion,revisado_en)
+      VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP)`,[idEntrega,req.usuario.id_usuario,codigo,promedio,observaciones,Boolean(req.body.requiere_correccion)]);
+    await conn.query(`UPDATE entregas_avances_estadia SET estado=? WHERE id_entrega=?`,[req.body.requiere_correccion?'requiere_correccion':'aprobado',idEntrega]);
+    await conn.commit();
+    await recalcularExpediente(ent[0].id_estadia);
+    res.json({ok:true,promedio,codigo});
+  }catch(e){try{await conn.rollback();}catch{};console.error(e);res.status(500).json({ok:false,mensaje:e.message==='Falta criterio'?'Faltan criterios por evaluar.':'No se pudo guardar la evaluación por criterios.'});}
+  finally{conn.release();}
+};
+
+exports.detalleEvaluacionEntrega = async (req,res) => {
+  if(!requireRoles(req,res,[2,4,1,6])) return;
+  try{
+    const [ent]=await db.query(`SELECT ea.*,fa.numero_avance,fa.titulo,es.id_estudiante,es.id_profesor
+      FROM entregas_avances_estadia ea JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance
+      JOIN estadias es ON es.id_estadia=ea.id_estadia WHERE ea.id_entrega=? LIMIT 1`,[req.params.id]);
+    if(!ent.length)return res.status(404).json({ok:false,mensaje:'Entrega no encontrada.'});
+    if(role(req)===2 && Number(ent[0].id_estudiante)!==Number(req.usuario.id_usuario))return res.status(403).json({ok:false,mensaje:'Sin permiso.'});
+    if(role(req)===4 && Number(ent[0].id_profesor)!==Number(req.usuario.id_usuario))return res.status(403).json({ok:false,mensaje:'Sin permiso.'});
+    const [criterios]=await db.query(`SELECT c.*,ev.codigo_nivel,ev.valor,ev.entregado,ev.completo,ev.observacion,ev.evaluado_en
+      FROM criterios_taller_estadia c LEFT JOIN evaluaciones_criterios_taller ev ON ev.id_criterio_taller=c.id_criterio_taller AND ev.id_entrega=?
+      WHERE c.numero_taller=? AND c.activo=TRUE ORDER BY c.orden`,[req.params.id,ent[0].numero_avance]);
+    const [niveles]=await db.query('SELECT * FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY orden');
+    res.json({ok:true,entrega:ent[0],criterios,niveles});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar la evaluación.'});}
+};
+
+exports.generarEvaluacionEmpresa = async (req,res) => {
+  if(!requireRoles(req,res,[4])) return;
+  const idEstadia=Number(req.params.idEstadia), momento=String(req.body.momento||'').toLowerCase();
+  if(!['inicial','final'].includes(momento))return res.status(400).json({ok:false,mensaje:'Selecciona evaluación inicial o final.'});
+  try{
+    const [own]=await db.query('SELECT id_estadia,id_empresa,empresa_razon_social,responsable_correo FROM estadias WHERE id_estadia=? AND id_profesor=?',[idEstadia,req.usuario.id_usuario]);
+    if(!own.length)return res.status(403).json({ok:false,mensaje:'Esta estadía no está asignada a tu cuenta.'});
+    const token=crypto.randomBytes(24).toString('hex');
+    const [r]=await db.query(`INSERT INTO evaluaciones_empresa_estadia(id_estadia,momento,token_publico,generada_por,vence_en)
+      VALUES(?,?,?,?,CURRENT_TIMESTAMP + INTERVAL '30 days')
+      ON CONFLICT(id_estadia,momento) DO UPDATE SET token_publico=EXCLUDED.token_publico,generada_por=EXCLUDED.generada_por,
+      generada_en=CURRENT_TIMESTAMP,vence_en=EXCLUDED.vence_en,respondida_en=NULL,promedio=NULL,codigo_final=NULL,observaciones=NULL
+      RETURNING id_evaluacion_empresa`,[idEstadia,momento,token,req.usuario.id_usuario]);
+    const base=process.env.FRONTEND_ORIGIN||'http://localhost:3000';
+    res.json({ok:true,id_evaluacion_empresa:r.rows?.[0]?.id_evaluacion_empresa||r.insertId,enlace:`${base.replace(/\/$/,'')}/evaluacion-empresa/${token}`,correo_sugerido:own[0].responsable_correo||null});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo generar el enlace de evaluación.'});}
+};
+
+exports.evaluacionesEmpresaProfesor = async (req,res) => {
+  if(!requireRoles(req,res,[4])) return;
+  try{
+    const [rows]=await db.query(`SELECT ee.*,es.id_estudiante,es.empresa_razon_social,es.proyecto_titulo,u.nombre,u.apellido,e.matricula,
+      (SELECT COUNT(*) FROM respuestas_evaluacion_empresa re WHERE re.id_evaluacion_empresa=ee.id_evaluacion_empresa) respuestas
+      FROM evaluaciones_empresa_estadia ee JOIN estadias es ON es.id_estadia=ee.id_estadia
+      JOIN estudiantes e ON e.id_estudiante=es.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      WHERE es.id_profesor=? ORDER BY ee.generada_en DESC`,[req.usuario.id_usuario]);
+    res.json({ok:true,evaluaciones:rows});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar las evaluaciones de empresa.'});}
+};
+
+exports.detalleEvaluacionEmpresa = async (req,res) => {
+  if(!requireRoles(req,res,[1,4,6,3])) return;
+  try{
+    let where='ee.id_evaluacion_empresa=?',params=[req.params.id];
+    if(role(req)===4){where+=' AND es.id_profesor=?';params.push(req.usuario.id_usuario);}
+    if(role(req)===3){where+=' AND es.id_empresa=?';params.push(req.usuario.id_usuario);}
+    const [head]=await db.query(`SELECT ee.*,es.empresa_razon_social,es.proyecto_titulo,u.nombre,u.apellido,e.matricula
+      FROM evaluaciones_empresa_estadia ee JOIN estadias es ON es.id_estadia=ee.id_estadia JOIN estudiantes e ON e.id_estudiante=es.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante WHERE ${where} LIMIT 1`,params);
+    if(!head.length)return res.status(404).json({ok:false,mensaje:'Evaluación no encontrada.'});
+    const [resp]=await db.query(`SELECT r.*,p.pregunta,p.categoria,p.orden FROM respuestas_evaluacion_empresa r JOIN preguntas_evaluacion_empresa p ON p.id_pregunta=r.id_pregunta WHERE r.id_evaluacion_empresa=? ORDER BY p.orden`,[req.params.id]);
+    const [preguntas]=await db.query('SELECT * FROM preguntas_evaluacion_empresa WHERE activa=TRUE ORDER BY orden');
+    const [niveles]=await db.query('SELECT * FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY orden');
+    res.json({ok:true,evaluacion:head[0],respuestas:resp,preguntas,niveles});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar la evaluación.'});}
+};
+
+exports.practicantesEmpresa = async (req,res) => {
+  if(!requireRoles(req,res,[3])) return;
+  try{
+    const [rows]=await db.query(`SELECT es.id_estadia,es.id_estudiante,es.proyecto_titulo,es.fecha_inicio,es.fecha_fin,es.responsable_nombre,
+      u.nombre,u.apellido,e.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre,
+      MAX(CASE WHEN ee.momento='inicial' THEN ee.id_evaluacion_empresa END) eval_inicial_id,
+      MAX(CASE WHEN ee.momento='inicial' THEN ee.respondida_en END) eval_inicial_respondida,
+      MAX(CASE WHEN ee.momento='final' THEN ee.id_evaluacion_empresa END) eval_final_id,
+      MAX(CASE WHEN ee.momento='final' THEN ee.respondida_en END) eval_final_respondida
+      FROM estadias es JOIN estudiantes e ON e.id_estudiante=es.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      JOIN grupos_estadia g ON g.id_grupo=es.id_grupo JOIN periodos_estadia p ON p.id_periodo=es.id_periodo
+      LEFT JOIN evaluaciones_empresa_estadia ee ON ee.id_estadia=es.id_estadia
+      WHERE es.id_empresa=? GROUP BY es.id_estadia,u.nombre,u.apellido,e.matricula,g.nombre,p.nombre ORDER BY u.apellido,u.nombre`,[req.usuario.id_usuario]);
+    res.json({ok:true,practicantes:rows});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los alumnos practicantes.'});}
+};
+
+exports.responderEvaluacionEmpresaCuenta = async (req,res) => {
+  if(!requireRoles(req,res,[3])) return;
+  try{
+    const [ev]=await db.query(`SELECT ee.token_publico FROM evaluaciones_empresa_estadia ee JOIN estadias es ON es.id_estadia=ee.id_estadia WHERE ee.id_evaluacion_empresa=? AND es.id_empresa=? LIMIT 1`,[req.params.id,req.usuario.id_usuario]);
+    if(!ev.length)return res.status(404).json({ok:false,mensaje:'Evaluación no encontrada para tu empresa.'});
+    req.params.token=ev[0].token_publico;
+    return await responderEvaluacionEmpresaComun(req,res);
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo registrar la evaluación.'});}
+};
+
+async function responderEvaluacionEmpresaComun(req,res){
+  const token=String(req.params.token||'');
+  const respuestas=Array.isArray(req.body.respuestas)?req.body.respuestas:[];
+  if(respuestas.length!==10)return res.status(400).json({ok:false,mensaje:'Debes responder las 10 preguntas.'});
+  const conn=await db.getConnection();
+  try{
+    const [ev]=await conn.query(`SELECT * FROM evaluaciones_empresa_estadia WHERE token_publico=? LIMIT 1`,[token]);
+    if(!ev.length)return res.status(404).json({ok:false,mensaje:'Enlace de evaluación no válido.'});
+    if(ev[0].vence_en && new Date(ev[0].vence_en)<new Date())return res.status(410).json({ok:false,mensaje:'Este enlace de evaluación ha vencido.'});
+    await conn.beginTransaction();
+    let suma=0;
+    for(const r of respuestas){
+      const [q]=await conn.query('SELECT id_pregunta FROM preguntas_evaluacion_empresa WHERE id_pregunta=? AND activa=TRUE',[r.id_pregunta]);
+      const [n]=await conn.query('SELECT codigo,valor FROM niveles_evaluacion_estadia WHERE codigo=? AND activo=TRUE',[String(r.codigo_nivel||'').toUpperCase()]);
+      if(!q.length||!n.length)throw new Error('Respuesta inválida');
+      const valor=Number(n[0].valor||0);suma+=valor;
+      await conn.query(`INSERT INTO respuestas_evaluacion_empresa(id_evaluacion_empresa,id_pregunta,codigo_nivel,valor,comentario)
+        VALUES(?,?,?,?,?) ON CONFLICT(id_evaluacion_empresa,id_pregunta) DO UPDATE SET codigo_nivel=EXCLUDED.codigo_nivel,valor=EXCLUDED.valor,comentario=EXCLUDED.comentario`,
+        [ev[0].id_evaluacion_empresa,r.id_pregunta,n[0].codigo,valor,r.comentario||null]);
+    }
+    const promedio=Math.round((suma/respuestas.length)*100)/100;
+    const [nearest]=await conn.query('SELECT codigo FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY ABS(valor-?) ASC,orden DESC LIMIT 1',[promedio]);
+    await conn.query(`UPDATE evaluaciones_empresa_estadia SET respondida_en=CURRENT_TIMESTAMP,evaluador_nombre=?,evaluador_correo=?,evaluador_cargo=?,promedio=?,codigo_final=?,observaciones=? WHERE id_evaluacion_empresa=?`,
+      [req.body.evaluador_nombre||null,req.body.evaluador_correo||null,req.body.evaluador_cargo||null,promedio,nearest[0]?.codigo||'NA',req.body.observaciones||null,ev[0].id_evaluacion_empresa]);
+    await conn.commit();
+    await recalcularExpediente(ev[0].id_estadia);
+    res.json({ok:true,promedio,codigo_final:nearest[0]?.codigo||'NA'});
+  }catch(e){try{await conn.rollback();}catch{};console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo guardar la evaluación.'});}
+  finally{conn.release();}
+}
+exports._responderEvaluacionEmpresaComun = responderEvaluacionEmpresaComun;
+
+exports.listarSeguimientos = async (req,res) => {
+  if(!requireRoles(req,res,[1,4,6])) return;
+  const id=Number(req.params.idEstadia);
+  try{
+    if(role(req)===4){const [own]=await db.query('SELECT 1 FROM estadias WHERE id_estadia=? AND id_profesor=?',[id,req.usuario.id_usuario]);if(!own.length)return res.status(403).json({ok:false,mensaje:'Sin permiso.'});}
+    const [rows]=await db.query(`SELECT s.*,CONCAT(u.nombre,' ',u.apellido) registrado_por_nombre FROM seguimientos_estadia s JOIN usuarios u ON u.id_usuario=s.registrado_por WHERE s.id_estadia=? ORDER BY s.fecha DESC,s.creado_en DESC`,[id]);
+    res.json({ok:true,seguimientos:rows});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar el seguimiento.'});}
+};
+
+exports.crearSeguimiento = async (req,res) => {
+  if(!requireRoles(req,res,[1,4])) return;
+  const id=Number(req.params.idEstadia),b=req.body;
+  if(!String(b.resumen||'').trim())return res.status(400).json({ok:false,mensaje:'Escribe el resumen del seguimiento.'});
+  try{
+    if(role(req)===4){const [own]=await db.query('SELECT 1 FROM estadias WHERE id_estadia=? AND id_profesor=?',[id,req.usuario.id_usuario]);if(!own.length)return res.status(403).json({ok:false,mensaje:'Sin permiso.'});}
+    await db.query(`INSERT INTO seguimientos_estadia(id_estadia,registrado_por,tipo,fecha,resumen,acuerdos,proxima_revision,estado) VALUES(?,?,?,?,?,?,?,?)`,
+      [id,req.usuario.id_usuario,b.tipo||'seguimiento',b.fecha||new Date().toISOString().slice(0,10),b.resumen,b.acuerdos||null,b.proxima_revision||null,b.estado||'abierto']);
+    res.status(201).json({ok:true});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo guardar el seguimiento.'});}
+};
+
+
+exports.listarNivelesEvaluacion = async (_req,res) => {
+  try{const [rows]=await db.query('SELECT * FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY orden');res.json({ok:true,niveles:rows});}
+  catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar la escala institucional.'});}
+};
+
+exports.actualizarNivelesEvaluacion = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  const niveles=Array.isArray(req.body.niveles)?req.body.niveles:[];
+  if(!niveles.length)return res.status(400).json({ok:false,mensaje:'Envía los niveles a actualizar.'});
+  const conn=await db.getConnection();
+  try{await conn.beginTransaction();for(const n of niveles){if(!['NA','CO','CD','CA'].includes(String(n.codigo||'').toUpperCase()))continue;await conn.query('UPDATE niveles_evaluacion_estadia SET nombre=?,valor=?,orden=?,activo=TRUE WHERE codigo=?',[n.nombre,Number(n.valor),Number(n.orden||1),String(n.codigo).toUpperCase()]);}await conn.commit();res.json({ok:true});}
+  catch(e){try{await conn.rollback();}catch{};res.status(500).json({ok:false,mensaje:'No se pudo actualizar la escala.'});}
+  finally{conn.release();}
+};
+
+exports.listarCriteriosUniversales = async (_req,res) => {
+  try{const [rows]=await db.query('SELECT * FROM criterios_taller_estadia WHERE activo=TRUE ORDER BY numero_taller,orden');res.json({ok:true,criterios:rows});}
+  catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los criterios.'});}
+};
+
+exports.actualizarCriteriosTaller = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  const numero=Number(req.params.numero),criterios=Array.isArray(req.body.criterios)?req.body.criterios:[];
+  if(![1,2,3].includes(numero)||!criterios.length)return res.status(400).json({ok:false,mensaje:'Configuración inválida.'});
+  const conn=await db.getConnection();
+  try{await conn.beginTransaction();await conn.query('UPDATE criterios_taller_estadia SET activo=FALSE WHERE numero_taller=?',[numero]);let orden=1;for(const c of criterios){if(!String(c.criterio||'').trim())continue;await conn.query(`INSERT INTO criterios_taller_estadia(numero_taller,criterio,orden,peso,activo) VALUES(?,?,?,?,TRUE) ON CONFLICT(numero_taller,criterio) DO UPDATE SET orden=EXCLUDED.orden,peso=EXCLUDED.peso,activo=TRUE`,[numero,String(c.criterio).trim(),orden++,Number(c.peso||0)]);}await conn.commit();res.json({ok:true});}
+  catch(e){try{await conn.rollback();}catch{};console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron actualizar los criterios.'});}
+  finally{conn.release();}
+};
+
+
+exports.obtenerInicioFormal = async (req,res) => {
+  if(!requireRoles(req,res,[1,4,6])) return;
+  const id=Number(req.params.idEstadia);
+  try{
+    if(role(req)===4){const [own]=await db.query('SELECT 1 FROM estadias WHERE id_estadia=? AND id_profesor=?',[id,req.usuario.id_usuario]);if(!own.length)return res.status(403).json({ok:false,mensaje:'Sin permiso.'});}
+    const [rows]=await db.query(`SELECT i.*,CONCAT(u.nombre,' ',u.apellido) autorizado_por_nombre FROM inicio_formal_estadia i LEFT JOIN usuarios u ON u.id_usuario=i.autorizado_por WHERE i.id_estadia=? LIMIT 1`,[id]);
+    res.json({ok:true,inicio:rows[0]||null});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar el inicio formal.'});}
+};
+
+exports.actualizarInicioFormal = async (req,res) => {
+  if(!requireRoles(req,res,[1,4])) return;
+  const id=Number(req.params.idEstadia),b=req.body;
+  try{
+    if(role(req)===4){const [own]=await db.query('SELECT 1 FROM estadias WHERE id_estadia=? AND id_profesor=?',[id,req.usuario.id_usuario]);if(!own.length)return res.status(403).json({ok:false,mensaje:'Sin permiso.'});}
+    await db.query(`INSERT INTO inicio_formal_estadia(id_estadia,fecha_inicio_real,autorizado,autorizado_por,autorizado_en,observaciones)
+      VALUES(?,?,?,?,CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END,?)
+      ON CONFLICT(id_estadia) DO UPDATE SET fecha_inicio_real=EXCLUDED.fecha_inicio_real,autorizado=EXCLUDED.autorizado,
+      autorizado_por=EXCLUDED.autorizado_por,autorizado_en=CASE WHEN EXCLUDED.autorizado THEN CURRENT_TIMESTAMP ELSE NULL END,
+      observaciones=EXCLUDED.observaciones`,[id,b.fecha_inicio_real||null,Boolean(b.autorizado),Boolean(b.autorizado)?req.usuario.id_usuario:null,Boolean(b.autorizado),b.observaciones||null]);
+    if(Boolean(b.autorizado)) await db.query(`UPDATE estadias SET estado='en_curso',actualizada_en=CURRENT_TIMESTAMP WHERE id_estadia=?`,[id]);
+    await recalcularExpediente(id);
+    res.json({ok:true});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo actualizar el inicio formal.'});}
+};

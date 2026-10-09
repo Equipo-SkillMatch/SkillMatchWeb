@@ -11,6 +11,7 @@ import VerAlumno from './pages/VerAlumno';
 import Terminos from './pages/Terminos';
 import Privacidad from './pages/Privacidad';
 import ModuloEstadias from './pages/ModuloEstadias';
+import EvaluacionEmpresaPublica from './pages/EvaluacionEmpresaPublica';
 
 import RutaProtegida from './components/RutaProtegida';
 import './CSS/DashboardTheme.css';
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/proyecto/:id" element={<VerProyecto />} />
         <Route path="/terminos" element={<Terminos />} />
         <Route path="/privacidad" element={<Privacidad />} />
+        <Route path="/evaluacion-empresa/:token" element={<EvaluacionEmpresaPublica />} />
 
  {/* RUTAS PROTEGIDAS POR TOKEN Y ROL */}
         

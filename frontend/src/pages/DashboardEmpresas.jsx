@@ -60,6 +60,10 @@ export default function DashboardEmpresas() {
   });
   const [perfilFoto, setPerfilFoto] = useState(null);
   const [showPerfilPass, setShowPerfilPass] = useState(false);
+  const [practicantes, setPracticantes] = useState([]);
+  const [evalPractica, setEvalPractica] = useState(null);
+  const [evalAnswers, setEvalAnswers] = useState({});
+  const [evalMeta, setEvalMeta] = useState({ evaluador_nombre:'', evaluador_correo:'', evaluador_cargo:'', observaciones:'' });
 
   // ESTADOS PARA LA EXPERIENCIA DE MATCH
   const [selectedSkills, setSelectedSkills] = useState([]); 
@@ -72,7 +76,41 @@ export default function DashboardEmpresas() {
   useEffect(() => {
     cargarDashboard();
     cargarPerfilEmpresa();
+    cargarPracticantes();
   }, []);
+
+  const cargarPracticantes = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/estadias/empresa/practicantes`, { headers: { Authorization: `Bearer ${token}` } });
+      const json = await res.json();
+      if (res.ok && json.ok) setPracticantes(json.practicantes || []);
+    } catch (error) { console.error('Error al cargar practicantes:', error); }
+  };
+
+  const abrirEvaluacionPractica = async (id) => {
+    if(!id) return showToast('El profesor asesor todavía no ha generado esta evaluación.',{type:'warning'});
+    try{
+      const token=localStorage.getItem('token');
+      const res=await fetch(`${API_BASE}/estadias/evaluaciones-empresa/${id}`,{headers:{Authorization:`Bearer ${token}`}});
+      const json=await res.json();
+      if(!res.ok||!json.ok) throw new Error(json.mensaje||'No se pudo cargar la evaluación.');
+      setEvalPractica(json);
+      setEvalAnswers(Object.fromEntries((json.respuestas||[]).map(r=>[r.id_pregunta,r.codigo_nivel])));
+      setEvalMeta({evaluador_nombre:json.evaluacion.evaluador_nombre||'',evaluador_correo:json.evaluacion.evaluador_correo||'',evaluador_cargo:json.evaluacion.evaluador_cargo||'',observaciones:json.evaluacion.observaciones||''});
+    }catch(e){showToast(e.message,{type:'error'});}
+  };
+
+  const guardarEvaluacionPractica = async () => {
+    const preguntas=evalPractica?.preguntas||[];
+    if(preguntas.some(p=>!evalAnswers[p.id_pregunta])) return showToast('Responde las 10 preguntas.',{type:'warning'});
+    try{
+      const token=localStorage.getItem('token');
+      const res=await fetch(`${API_BASE}/estadias/empresa/evaluaciones/${evalPractica.evaluacion.id_evaluacion_empresa}/responder`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...evalMeta,respuestas:preguntas.map(p=>({id_pregunta:p.id_pregunta,codigo_nivel:evalAnswers[p.id_pregunta]}))})});
+      const json=await res.json();if(!res.ok||!json.ok)throw new Error(json.mensaje||'No se pudo guardar.');
+      showToast(`Evaluación enviada: ${json.codigo_final} · ${json.promedio}`,{type:'success'});setEvalPractica(null);await cargarPracticantes();
+    }catch(e){showToast(e.message,{type:'error'});}
+  };
 
   // FUNCIÓN PARA CAMBIAR DE VISTA Y CERRAR EL MENÚ EN MÓVIL
   const handleNavClick = (vista) => {
@@ -390,6 +428,9 @@ export default function DashboardEmpresas() {
           </div>
           <div className={`nav-item ${view === "candidatos" ? "active" : ""}`} onClick={() => handleNavClick("candidatos")}>
             <span className="icon"><AppIcon name="target" /></span> Candidatos
+          </div>
+          <div className={`nav-item ${view === "practicantes" ? "active" : ""}`} onClick={() => handleNavClick("practicantes")}>
+            <span className="icon"><AppIcon name="clipboard" /></span> Evaluación practicantes
           </div>
         </nav>
         <div className="sidebar-bottom">
@@ -761,6 +802,26 @@ export default function DashboardEmpresas() {
            </>
         )}
 
+        {view === "practicantes" && (
+          <>
+            <div className="topbar">
+              <div className="topbar-left-wrap">
+                <button className="hamburger-btn" onClick={() => setIsMobileMenuOpen(true)}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+                <div className="topbar-title">Evaluación <span>Practicantes</span></div>
+              </div>
+            </div>
+            <div className="content">
+              <div className="section-header"><div><div className="section-title">Alumnos en estadía</div><p style={{color:'#64748b',marginTop:6}}>Responde la primera evaluación y la evaluación final cuando el profesor asesor las habilite.</p></div></div>
+              <div className="table-wrap">
+                <div className="table-header" style={{gridTemplateColumns:'1.3fr 1.2fr 1fr 1fr'}}><div>Alumno</div><div>Proyecto</div><div>Primera evaluación</div><div>Evaluación final</div></div>
+                {practicantes.length ? practicantes.map(p=><div className="table-row" style={{gridTemplateColumns:'1.3fr 1.2fr 1fr 1fr'}} key={p.id_estadia}><div><div className="vacante-title">{p.nombre} {p.apellido}</div><div className="vacante-area">{p.matricula} · {p.grupo_nombre}</div></div><div>{p.proyecto_titulo||'—'}</div><div><button className="action-btn" disabled={!p.eval_inicial_id} onClick={()=>abrirEvaluacionPractica(p.eval_inicial_id)}>{p.eval_inicial_id?(p.eval_inicial_respondida?'Ver / actualizar':'Responder'):'Pendiente del profesor'}</button></div><div><button className="action-btn" disabled={!p.eval_final_id} onClick={()=>abrirEvaluacionPractica(p.eval_final_id)}>{p.eval_final_id?(p.eval_final_respondida?'Ver / actualizar':'Responder'):'Pendiente del profesor'}</button></div></div>) : <div style={{padding:30,textAlign:'center'}}>No hay alumnos en estadía asociados a esta empresa.</div>}
+              </div>
+            </div>
+          </>
+        )}
+
         {view === "perfil" && (
            <>
              <div className="topbar">
@@ -838,6 +899,10 @@ export default function DashboardEmpresas() {
            </>
         )}
       </main>
+
+      {evalPractica && (
+        <div className="modal-overlay" onClick={()=>setEvalPractica(null)}><div className="modal" style={{maxWidth:900}} onClick={e=>e.stopPropagation()}><div className="modal-title">Evaluación de estadía · {evalPractica.evaluacion.momento==='inicial'?'Primera evaluación':'Evaluación final'}</div><p style={{color:'#64748b'}}>{evalPractica.evaluacion.nombre} {evalPractica.evaluacion.apellido} · {evalPractica.evaluacion.proyecto_titulo}</p><div className="form-row"><div className="form-group"><label className="form-label">Nombre del evaluador</label><input className="form-input" value={evalMeta.evaluador_nombre} onChange={e=>setEvalMeta({...evalMeta,evaluador_nombre:e.target.value})}/></div><div className="form-group"><label className="form-label">Cargo</label><input className="form-input" value={evalMeta.evaluador_cargo} onChange={e=>setEvalMeta({...evalMeta,evaluador_cargo:e.target.value})}/></div></div>{['desempeno','actitud'].map(cat=><div key={cat} style={{marginTop:22}}><h3 style={{color:'#244E7C'}}>{cat==='desempeno'?'Desempeño':'Actitud'}</h3>{(evalPractica.preguntas||[]).filter(p=>p.categoria===cat).map(p=><div key={p.id_pregunta} style={{padding:'12px 0',borderBottom:'1px solid #e5e7eb'}}><div style={{fontWeight:600,marginBottom:8}}>{p.orden}. {p.pregunta}</div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{(evalPractica.niveles||[]).map(n=><button type="button" className={`action-btn ${evalAnswers[p.id_pregunta]===n.codigo?'active':''}`} key={n.codigo} onClick={()=>setEvalAnswers({...evalAnswers,[p.id_pregunta]:n.codigo})}>{n.codigo} · {n.nombre}</button>)}</div></div>)}</div>)}<div className="form-group" style={{marginTop:20}}><label className="form-label">Observaciones</label><textarea className="form-textarea" value={evalMeta.observaciones} onChange={e=>setEvalMeta({...evalMeta,observaciones:e.target.value})}/></div><div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}><button className="btn btn-ghost" onClick={()=>setEvalPractica(null)}>Cerrar</button><button className="btn btn-primary" onClick={guardarEvaluacionPractica}>Enviar evaluación</button></div></div></div>
+      )}
 
       {/* MODAL CREAR / EDITAR */}
       {showModalForm && (

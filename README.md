@@ -3,6 +3,11 @@
 Proyecto completo de SkillMatch con frontend en React y backend en Node.js/Express con PostgreSQL.
 La actualización conserva las rutas, roles y lógica existentes, y renueva la experiencia visual de la landing, autenticación y dashboards.
 
+
+## SkillMatch V7.0 — Estadías institucionales
+
+La versión actual incorpora búsqueda/autollenado de empresas de estadía, evaluación de los tres talleres por criterios, evaluación inicial y final por parte de la empresa, expediente digital integral, inicio formal y bitácora de seguimiento. Si la instalación ya se encuentra en V6.3, aplica únicamente `backend/sql/16_estadias_v7_evaluaciones_seguimiento.sql` antes de desplegar el código V7.
+
 ## Cambios principales
 
 - Landing page moderna, responsiva y alineada con la identidad azul/dorada de SkillMatch y UTEQ.

@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '6.3.0-estadias-experiencia-institucional';
+const APP_VERSION = '7.0.0-estadias-evaluacion-seguimiento';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);
@@ -208,4 +208,52 @@ exports.obtenerVersion = (_req, res) => res.json({
 exports.listarGruposEscolaresPublicos = async (_req,res) => {
   try{const [rows]=await db.query(`SELECT ge.id_grupo_escolar,ge.nombre,ge.generacion,c.id_carrera,c.nombre carrera FROM grupos_escolares ge JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE ge.activo=TRUE ORDER BY c.nombre,ge.generacion,ge.nombre`);res.json({ok:true,grupos:rows});}
   catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los grupos escolares.'});}
+};
+
+
+// V7 - Evaluación de empresa mediante enlace público con token no predecible.
+exports.obtenerEvaluacionEmpresaPublica = async (req,res) => {
+  try{
+    const token=String(req.params.token||'');
+    const [rows]=await db.query(`SELECT ee.id_evaluacion_empresa,ee.momento,ee.vence_en,ee.respondida_en,
+      es.proyecto_titulo,es.empresa_razon_social,u.nombre,u.apellido,e.matricula,p.nombre periodo_nombre
+      FROM evaluaciones_empresa_estadia ee JOIN estadias es ON es.id_estadia=ee.id_estadia
+      JOIN estudiantes e ON e.id_estudiante=es.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      JOIN periodos_estadia p ON p.id_periodo=es.id_periodo WHERE ee.token_publico=? LIMIT 1`,[token]);
+    if(!rows.length)return res.status(404).json({ok:false,mensaje:'Enlace de evaluación no válido.'});
+    if(rows[0].vence_en && new Date(rows[0].vence_en)<new Date())return res.status(410).json({ok:false,mensaje:'Este enlace de evaluación ha vencido.'});
+    const [preguntas]=await db.query('SELECT * FROM preguntas_evaluacion_empresa WHERE activa=TRUE ORDER BY orden');
+    const [niveles]=await db.query('SELECT * FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY orden');
+    res.json({ok:true,evaluacion:rows[0],preguntas,niveles});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo cargar la evaluación.'});}
+};
+
+exports.responderEvaluacionEmpresaPublica = async (req,res) => {
+  const token=String(req.params.token||'');
+  const respuestas=Array.isArray(req.body.respuestas)?req.body.respuestas:[];
+  if(respuestas.length!==10)return res.status(400).json({ok:false,mensaje:'Debes responder las 10 preguntas.'});
+  const conn=await db.getConnection();
+  try{
+    const [ev]=await conn.query('SELECT * FROM evaluaciones_empresa_estadia WHERE token_publico=? LIMIT 1',[token]);
+    if(!ev.length)return res.status(404).json({ok:false,mensaje:'Enlace de evaluación no válido.'});
+    if(ev[0].vence_en && new Date(ev[0].vence_en)<new Date())return res.status(410).json({ok:false,mensaje:'Este enlace de evaluación ha vencido.'});
+    await conn.beginTransaction();
+    let suma=0;
+    for(const r of respuestas){
+      const [q]=await conn.query('SELECT id_pregunta FROM preguntas_evaluacion_empresa WHERE id_pregunta=? AND activa=TRUE',[r.id_pregunta]);
+      const [n]=await conn.query('SELECT codigo,valor FROM niveles_evaluacion_estadia WHERE codigo=? AND activo=TRUE',[String(r.codigo_nivel||'').toUpperCase()]);
+      if(!q.length||!n.length)throw new Error('Respuesta inválida');
+      const valor=Number(n[0].valor||0);suma+=valor;
+      await conn.query(`INSERT INTO respuestas_evaluacion_empresa(id_evaluacion_empresa,id_pregunta,codigo_nivel,valor,comentario)
+        VALUES(?,?,?,?,?) ON CONFLICT(id_evaluacion_empresa,id_pregunta) DO UPDATE SET codigo_nivel=EXCLUDED.codigo_nivel,valor=EXCLUDED.valor,comentario=EXCLUDED.comentario`,
+        [ev[0].id_evaluacion_empresa,r.id_pregunta,n[0].codigo,valor,r.comentario||null]);
+    }
+    const promedio=Math.round((suma/respuestas.length)*100)/100;
+    const [nearest]=await conn.query('SELECT codigo FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY ABS(valor-?) ASC,orden DESC LIMIT 1',[promedio]);
+    await conn.query(`UPDATE evaluaciones_empresa_estadia SET respondida_en=CURRENT_TIMESTAMP,evaluador_nombre=?,evaluador_correo=?,evaluador_cargo=?,promedio=?,codigo_final=?,observaciones=? WHERE id_evaluacion_empresa=?`,
+      [req.body.evaluador_nombre||null,req.body.evaluador_correo||null,req.body.evaluador_cargo||null,promedio,nearest[0]?.codigo||'NA',req.body.observaciones||null,ev[0].id_evaluacion_empresa]);
+    await conn.commit();
+    res.json({ok:true,promedio,codigo_final:nearest[0]?.codigo||'NA'});
+  }catch(e){try{await conn.rollback();}catch{};console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo guardar la evaluación.'});}
+  finally{conn.release();}
 };

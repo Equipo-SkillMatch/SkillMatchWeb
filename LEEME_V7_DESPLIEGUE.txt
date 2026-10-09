@@ -1,0 +1,67 @@
+SKILLMATCH V7.0 - ORDEN DE DESPLIEGUE
+=====================================
+
+IMPORTANTE:
+- Esta versión SÍ requiere migración de base de datos.
+- NO vuelvas a ejecutar 13_estadias_v5.sql, 14_estadias_v6.sql ni 15_estadias_v6_1.sql si ya están aplicadas.
+- Haz un respaldo de PostgreSQL antes de la migración 16.
+
+1. RESPALDAR LA BASE DE DATOS ACTUAL.
+
+2. EJECUTAR:
+   \i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/16_estadias_v7_evaluaciones_seguimiento.sql'
+
+   Debe terminar con:
+   Migracion 16 aplicada. SkillMatch V7 evaluaciones y seguimiento listo.
+
+3. SUBIR EL CÓDIGO V7:
+   git add .
+   git commit -m "version 7 evaluaciones y seguimiento"
+   git push origin main
+
+4. VERIFICAR EL DEPLOY DEL BACKEND Y FRONTEND.
+
+5. VERIFICAR LA API.
+   La versión esperada es:
+   7.0.0-estadias-evaluacion-seguimiento
+
+PRUEBA FUNCIONAL RECOMENDADA
+----------------------------
+A) Alumno
+   - Entrar a Información de estadía.
+   - Buscar empresa por RFC o nombre.
+   - Seleccionar una empresa existente y verificar autollenado.
+   - Probar otra empresa inexistente y capturarla manualmente.
+
+B) Profesor
+   - Entrar a su grupo.
+   - Autorizar inicio formal.
+   - Registrar un seguimiento.
+   - Revisar Taller 1 y calificar cada criterio.
+   - Confirmar promedio automático.
+   - Generar enlace de evaluación empresarial inicial.
+
+C) Empresa externa
+   - Abrir enlace público.
+   - Responder las 10 preguntas y guardar.
+
+D) Empresa con cuenta
+   - Entrar al dashboard de Empresa.
+   - Abrir “Evaluación practicantes”.
+   - Responder una evaluación generada por el profesor.
+
+E) Profesor
+   - Revisar resultados de la evaluación de empresa.
+   - Generar evaluación final al cierre.
+
+F) Admin / Servicios Escolares
+   - Abrir el expediente del alumno.
+   - Verificar checklist, seguro, talleres, evaluación empresarial,
+     seguimiento e incorporación de memoria final.
+
+NOTA SOBRE LAS 10 PREGUNTAS
+----------------------------
+Las fotografías recibidas muestran que la empresa evalúa DESEMPEÑO y ACTITUD,
+pero no permiten leer el texto oficial de las 10 preguntas. V7 incluye 10 preguntas
+iniciales editables y coherentes con esas dos dimensiones. Deben reemplazarse si la
+institución proporciona el cuestionario oficial.
