@@ -626,7 +626,8 @@ exports.subirMemoriaFinal = async (req,res) => {
     if(!rows.length)return res.status(400).json({ok:false,mensaje:'No tienes estadía registrada.'});
     const e=rows[0];
     if(!e.memoria_final_habilitada)return res.status(400).json({ok:false,mensaje:'Tu profesor todavía no ha marcado la memoria como terminada.'});
-  const normal = s =>
+  const nuevaVersion = Number(e.memoria_final_version || 0) + 1;
+    const normal = s =>
   String(s || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
