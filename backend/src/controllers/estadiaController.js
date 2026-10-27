@@ -626,12 +626,36 @@ exports.subirMemoriaFinal = async (req,res) => {
     if(!rows.length)return res.status(400).json({ok:false,mensaje:'No tienes estadía registrada.'});
     const e=rows[0];
     if(!e.memoria_final_habilitada)return res.status(400).json({ok:false,mensaje:'Tu profesor todavía no ha marcado la memoria como terminada.'});
-    const normal=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]/g,'');
-    const nombreEsperado=`${normal(e.grupo)}_${normal(`${e.nombre}${e.apellido}`)}.pdf`;
-    const esperado=nombreEsperado.toLowerCase();
-    const recibido=normal(req.file.originalname.replace(/\.pdf$/i,'')).toLowerCase()+'.pdf';
-    if(recibido!==esperado)return res.status(400).json({ok:false,mensaje:`El archivo debe llamarse ${nombreEsperado}`});
-    const nuevaVersion=Number(e.memoria_final_version||0)+1;
+  const normal = s =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]/g, '');
+
+const nombreEsperado =
+  `${normal(e.grupo)}_${normal(`${e.nombre}${e.apellido}`)}.pdf`;
+
+const normalizarArchivo = nombre => {
+  const ultimoPunto = nombre.lastIndexOf('.');
+  const base = ultimoPunto >= 0 ? nombre.substring(0, ultimoPunto) : nombre;
+  const extension = ultimoPunto >= 0 ? nombre.substring(ultimoPunto) : '';
+
+  return base
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9_]/g, '')
+    .toLowerCase() + extension.toLowerCase();
+};
+
+const esperado = normalizarArchivo(nombreEsperado);
+const recibido = normalizarArchivo(req.file.originalname);
+
+if (recibido !== esperado) {
+  return res.status(400).json({
+    ok: false,
+    mensaje: `El archivo debe llamarse ${nombreEsperado}`
+  });
+}
     const ruta=filePath(req.file);
     await db.query(`UPDATE estadias SET memoria_final_ruta=?,memoria_final_nombre=?,memoria_final_mime=?,
       memoria_final_subida_en=CURRENT_TIMESTAMP,memoria_final_version=? WHERE id_estadia=?`,
