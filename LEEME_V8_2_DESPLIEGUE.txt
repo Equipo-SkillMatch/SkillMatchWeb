@@ -1,0 +1,10 @@
+SKILLMATCH V8.2
+
+1. Sustituir los archivos del proyecto por esta versión.
+2. Ejecutar en PostgreSQL:
+   \i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/19_estadias_v8_2_memoria_flujo_simple.sql'
+3. Subir cambios a main.
+4. Verificar despliegue del backend y frontend.
+5. Probar con un alumno que ya tenga memoria final cargada.
+
+La migración 19 NO elimina pruebas existentes. Crea revisiones faltantes para memorias ya cargadas y corrige textos.

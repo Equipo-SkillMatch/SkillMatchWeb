@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '8.1.0-cierre-institucional-ajustes';
+const APP_VERSION = '8.2.0-memoria-final-flujo-simple';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);
@@ -278,6 +278,7 @@ exports.responderAprobacionMemoriaEmpresa = async (req,res) => {
   const calificacion=req.body.calificacion===undefined||req.body.calificacion===null?null:Number(req.body.calificacion);
   if(!['aprobado','rechazado','requiere_correccion'].includes(estado))return res.status(400).json({ok:false,mensaje:'Estado inválido.'});
   if(estado==='aprobado' && ![8,9,10].includes(calificacion))return res.status(400).json({ok:false,mensaje:'Selecciona una calificación de 8, 9 o 10 para aprobar la memoria.'});
+  if(['rechazado','requiere_correccion'].includes(estado) && !String(req.body.observaciones||'').trim())return res.status(400).json({ok:false,mensaje:'Indica el motivo o la corrección que debe realizar el alumno.'});
   try{
     const [rows]=await db.query(`SELECT id_validacion FROM validaciones_cierre_estadia WHERE area='empresa_memoria' AND token_publico=? LIMIT 1`,[req.params.token]);
     if(!rows.length)return res.status(404).json({ok:false,mensaje:'Enlace de aprobación no válido.'});

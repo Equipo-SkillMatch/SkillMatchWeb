@@ -101,7 +101,7 @@ export default function DashboardEmpresas() {
       const json=await res.json();
       if(!res.ok||!json.ok) throw new Error(json.mensaje||'No se pudo cargar la evaluación.');
       setEvalPractica(json);
-      setEvalAnswers(Object.fromEntries((json.respuestas||[]).map(r=>[r.id_pregunta,r.codigo_nivel])));
+      setEvalAnswers(Object.fromEntries((json.respuestas||[]).map(r=>[String(r.id_pregunta),String(r.codigo_nivel||'').toUpperCase()])));
       setEvalMeta({evaluador_nombre:json.evaluacion.evaluador_nombre||'',evaluador_correo:json.evaluacion.evaluador_correo||'',evaluador_cargo:json.evaluacion.evaluador_cargo||'',observaciones:json.evaluacion.observaciones||''});
     }catch(e){showToast(e.message,{type:'error'});}
   };
@@ -111,7 +111,11 @@ export default function DashboardEmpresas() {
     if(preguntas.some(p=>!evalAnswers[p.id_pregunta])) return showToast('Responde las 10 preguntas.',{type:'warning'});
     try{
       const token=localStorage.getItem('token');
-      const res=await fetch(`${API_BASE}/estadias/empresa/evaluaciones/${evalPractica.evaluacion.id_evaluacion_empresa}/responder`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...evalMeta,respuestas:preguntas.map(p=>({id_pregunta:p.id_pregunta,codigo_nivel:evalAnswers[p.id_pregunta]}))})});
+      // Usa el mismo flujo público que ya funciona con el enlace compartido por el profesor.
+      // Esto evita diferencias entre responder desde el perfil de empresa y responder desde la liga externa.
+      const publicToken=evalPractica?.evaluacion?.token_publico;
+      if(!publicToken) throw new Error('Esta evaluación no tiene un enlace válido. Pide al profesor regenerarla.');
+      const res=await fetch(`${API_BASE}/public/evaluacion-empresa/${publicToken}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...evalMeta,respuestas:preguntas.map(p=>({id_pregunta:p.id_pregunta,codigo_nivel:evalAnswers[p.id_pregunta]}))})});
       const json=await res.json();if(!res.ok||!json.ok)throw new Error(json.mensaje||'No se pudo guardar.');
       showToast(`Evaluación enviada: ${json.codigo_final} · ${json.promedio}`,{type:'success'});setEvalPractica(null);await cargarPracticantes();
     }catch(e){showToast(e.message,{type:'error'});}
@@ -842,7 +846,7 @@ export default function DashboardEmpresas() {
               <div className="section-header"><div><div className="section-title">Alumnos en estadía</div><p style={{color:'#64748b',marginTop:6}}>Responde la primera evaluación y la evaluación final cuando el profesor asesor las habilite.</p></div></div>
               <div className="table-wrap">
                 <div className="table-header" style={{gridTemplateColumns:'1.3fr 1.2fr 1fr 1fr'}}><div>Alumno</div><div>Proyecto</div><div>Primera evaluación</div><div>Evaluación final</div></div>
-                {practicantes.length ? practicantes.map(p=><div className="table-row" style={{gridTemplateColumns:'1.3fr 1.2fr 1fr 1fr'}} key={p.id_estadia}><div><div className="vacante-title">{p.nombre} {p.apellido}</div><div className="vacante-area">{p.matricula} · {p.grupo_nombre}</div></div><div>{p.proyecto_titulo||'—'}</div><div><button className="action-btn" disabled={!p.eval_inicial_id} onClick={()=>abrirEvaluacionPractica(p.eval_inicial_id)}>{p.eval_inicial_id?(p.eval_inicial_respondida?'Ver / actualizar':'Responder'):'Pendiente del profesor'}</button></div><div><button className="action-btn" disabled={!p.eval_final_id} onClick={()=>abrirEvaluacionPractica(p.eval_final_id)}>{p.eval_final_id?(p.eval_final_respondida?'Ver / actualizar':'Responder'):'Pendiente del profesor'}</button></div></div>) : <div style={{padding:30,textAlign:'center'}}>No hay alumnos en estadía asociados a esta empresa.</div>}
+                {practicantes.length ? practicantes.map(p=><div className="table-row" style={{gridTemplateColumns:'1.3fr 1.2fr 1fr 1fr'}} key={p.id_estadia}><div><div className="vacante-title">{p.nombre} {p.apellido}</div><div className="vacante-area">{p.matricula} · {p.grupo_nombre}</div></div><div>{p.proyecto_titulo||'—'}</div><div><button className="action-btn" disabled={!p.eval_inicial_id} onClick={()=>abrirEvaluacionPractica(p.eval_inicial_id)}>{p.eval_inicial_id?(p.eval_inicial_respondida?`Ver respuestas · ${p.eval_inicial_codigo||''} ${p.eval_inicial_promedio||''}`:'Responder'):'Pendiente del profesor'}</button></div><div><button className="action-btn" disabled={!p.eval_final_id} onClick={()=>abrirEvaluacionPractica(p.eval_final_id)}>{p.eval_final_id?(p.eval_final_respondida?`Ver respuestas · ${p.eval_final_codigo||''} ${p.eval_final_promedio||''}`:'Responder'):'Pendiente del profesor'}</button></div></div>) : <div style={{padding:30,textAlign:'center'}}>No hay alumnos en estadía asociados a esta empresa.</div>}
               </div>
             </div>
           </>

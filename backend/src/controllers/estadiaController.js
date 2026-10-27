@@ -637,9 +637,20 @@ exports.subirMemoriaFinal = async (req,res) => {
       memoria_final_subida_en=CURRENT_TIMESTAMP,memoria_final_version=? WHERE id_estadia=?`,
       [ruta,req.file.originalname,req.file.mimetype,nuevaVersion,e.id_estadia]);
 
-    await db.query(`UPDATE validaciones_cierre_estadia
-      SET estado='en_revision',observaciones=NULL,revisado_por=NULL,revisado_en=NULL,actualizado_en=CURRENT_TIMESTAMP,enviado_en=CURRENT_TIMESTAMP
-      WHERE id_estadia=? AND area IN ('biblioteca','laboratorios','empresa_memoria')`,[e.id_estadia]);
+    // V8.2: al subir/reemplazar la memoria final se crea automáticamente la bandeja de revisión.
+    // Así el alumno no tiene que "mandarla" a cada área manualmente y siempre aparece en Biblioteca,
+    // Laboratorios y Empresa. El token de empresa se conserva si ya existía para que el mismo enlace siga funcionando.
+    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en)
+      VALUES(?,'biblioteca','en_revision',CURRENT_TIMESTAMP)
+      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',observaciones=NULL,revisado_por=NULL,revisado_en=NULL,actualizado_en=CURRENT_TIMESTAMP,enviado_en=CURRENT_TIMESTAMP`,[e.id_estadia]);
+    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en)
+      VALUES(?,'laboratorios','en_revision',CURRENT_TIMESTAMP)
+      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',observaciones=NULL,revisado_por=NULL,revisado_en=NULL,actualizado_en=CURRENT_TIMESTAMP,enviado_en=CURRENT_TIMESTAMP`,[e.id_estadia]);
+    const [empresaVal]=await db.query(`SELECT id_validacion,token_publico FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='empresa_memoria' LIMIT 1`,[e.id_estadia]);
+    const tokenEmpresa=empresaVal[0]?.token_publico || crypto.randomBytes(24).toString('hex');
+    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,token_publico,enviado_en)
+      VALUES(?,'empresa_memoria','en_revision',?,CURRENT_TIMESTAMP)
+      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',token_publico=COALESCE(validaciones_cierre_estadia.token_publico,EXCLUDED.token_publico),observaciones=NULL,calificacion_memoria_empresa=NULL,revisado_por=NULL,revisado_en=NULL,actualizado_en=CURRENT_TIMESTAMP,enviado_en=CURRENT_TIMESTAMP`,[e.id_estadia,tokenEmpresa]);
 
     await recalcularExpediente(e.id_estadia);
     res.json({ok:true,memoria_final_ruta:ruta,memoria_final_nombre:req.file.originalname,memoria_final_version:nuevaVersion,mensaje:`Memoria final versión ${nuevaVersion} guardada correctamente.`});
@@ -1016,8 +1027,12 @@ exports.practicantesEmpresa = async (req,res) => {
       u.nombre,u.apellido,e.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre,
       MAX(CASE WHEN ee.momento='inicial' THEN ee.id_evaluacion_empresa END) eval_inicial_id,
       MAX(CASE WHEN ee.momento='inicial' THEN ee.respondida_en END) eval_inicial_respondida,
+      MAX(CASE WHEN ee.momento='inicial' THEN ee.codigo_final END) eval_inicial_codigo,
+      MAX(CASE WHEN ee.momento='inicial' THEN ee.promedio END) eval_inicial_promedio,
       MAX(CASE WHEN ee.momento='final' THEN ee.id_evaluacion_empresa END) eval_final_id,
-      MAX(CASE WHEN ee.momento='final' THEN ee.respondida_en END) eval_final_respondida
+      MAX(CASE WHEN ee.momento='final' THEN ee.respondida_en END) eval_final_respondida,
+      MAX(CASE WHEN ee.momento='final' THEN ee.codigo_final END) eval_final_codigo,
+      MAX(CASE WHEN ee.momento='final' THEN ee.promedio END) eval_final_promedio
       FROM estadias es JOIN estudiantes e ON e.id_estudiante=es.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
       JOIN grupos_estadia g ON g.id_grupo=es.id_grupo JOIN periodos_estadia p ON p.id_periodo=es.id_periodo
       LEFT JOIN evaluaciones_empresa_estadia ee ON ee.id_estadia=es.id_estadia
@@ -1324,6 +1339,25 @@ exports.resolverValidacionInstitucional = async (req,res) => {
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo actualizar la validación.'});}
 };
 
+exports.generarEnlaceMemoriaEmpresa = async (req,res) => {
+  if(!requireRoles(req,res,[4])) return;
+  const idEstadia=Number(req.params.idEstadia);
+  try{
+    const [own]=await db.query(`SELECT id_estadia,memoria_final_ruta FROM estadias WHERE id_estadia=? AND id_profesor=? LIMIT 1`,[idEstadia,req.usuario.id_usuario]);
+    if(!own.length)return res.status(403).json({ok:false,mensaje:'Esta estadía no está asignada a tu cuenta.'});
+    if(!own[0].memoria_final_ruta)return res.status(400).json({ok:false,mensaje:'El alumno todavía no ha subido la memoria técnica final.'});
+    const [actual]=await db.query(`SELECT token_publico FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='empresa_memoria' LIMIT 1`,[idEstadia]);
+    const token=actual[0]?.token_publico || crypto.randomBytes(24).toString('hex');
+    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,token_publico,enviado_en)
+      VALUES(?,'empresa_memoria','en_revision',?,CURRENT_TIMESTAMP)
+      ON CONFLICT(id_estadia,area) DO UPDATE SET token_publico=COALESCE(validaciones_cierre_estadia.token_publico,EXCLUDED.token_publico),
+      estado=CASE WHEN validaciones_cierre_estadia.estado='aprobado' THEN validaciones_cierre_estadia.estado ELSE 'en_revision' END,
+      enviado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP`,[idEstadia,token]);
+    const base=(process.env.FRONTEND_ORIGIN||'http://localhost:3000').replace(/\/$/,'');
+    res.json({ok:true,enlace:`${base}/aprobacion-memoria/${token}`,mensaje:'Enlace de revisión de memoria listo para compartir con la empresa.'});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo generar el enlace de revisión de memoria.'});}
+};
+
 exports.memoriasCierreEmpresa = async (req,res) => {
   if(!requireRoles(req,res,[3])) return;
   try{
@@ -1333,7 +1367,7 @@ exports.memoriasCierreEmpresa = async (req,res) => {
       FROM validaciones_cierre_estadia v JOIN estadias e ON e.id_estadia=v.id_estadia
       JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
       JOIN grupos_estadia g ON g.id_grupo=e.id_grupo
-      WHERE v.area='empresa_memoria' AND e.id_empresa=? ORDER BY v.enviado_en DESC`,[req.usuario.id_usuario]);
+      WHERE v.area='empresa_memoria' AND e.id_empresa=? AND e.memoria_final_ruta IS NOT NULL ORDER BY v.enviado_en DESC`,[req.usuario.id_usuario]);
     res.json({ok:true,memorias:rows});
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar las memorias pendientes.'});}
 };
@@ -1454,7 +1488,7 @@ exports.cierreOverviewAdmin = async (req,res) => {
 exports.cierresProfesor = async (req,res) => {
   if(!requireRoles(req,res,[4])) return;
   try{
-    const [rows]=await db.query(`SELECT e.id_estadia,e.estado,e.proyecto_titulo,e.memoria_final_autorizada,e.cierre_solicitado_en,e.cierre_completado_en,
+    const [rows]=await db.query(`SELECT e.id_estadia,e.estado,e.proyecto_titulo,e.memoria_final_autorizada,e.memoria_final_ruta,e.memoria_final_nombre,COALESCE(e.memoria_final_version,0) memoria_final_version,e.cierre_solicitado_en,e.cierre_completado_en,
       u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre,
       COUNT(v.id_validacion) validaciones_total,COUNT(v.id_validacion) FILTER (WHERE v.estado='aprobado') validaciones_aprobadas,
       MAX(t.id_toma) id_toma,MAX(t.estado) toma_estado,MAX(t.fecha_hora) toma_fecha

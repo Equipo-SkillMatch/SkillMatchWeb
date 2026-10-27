@@ -90,6 +90,7 @@ router.post('/cierre/ingles', uploadEvidencias.single('archivo'), procesarYSubir
 router.post('/cierre/donativo', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirDonativo);
 router.get('/cierre/validaciones', controller.validacionesInstitucionales);
 router.put('/cierre/validaciones/:id', controller.resolverValidacionInstitucional);
+router.post('/profesor/estadias/:idEstadia/enlace-memoria-empresa', controller.generarEnlaceMemoriaEmpresa);
 router.get('/empresa/memorias-cierre', controller.memoriasCierreEmpresa);
 router.put('/empresa/memorias-cierre/:id', controller.resolverMemoriaEmpresaCuenta);
 router.get('/profesor/estadias/:idEstadia/evaluadores', controller.profesoresEvaluadoresToma);
