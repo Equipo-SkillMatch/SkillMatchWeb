@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { API_BASE, buildFileUrl } from '../config/api';
 import AppIcon from '../components/AppIcon';
 import { showToast, confirmDialog, promptDialog } from '../components/InstitutionalUI';
+import CierreEstadiaPanel from '../components/CierreEstadiaPanel';
 import '../CSS/ModuloEstadias.css';
 
-const roleLabel={1:'Administrador',2:'Estudiante',4:'Profesor asesor',6:'Servicios Escolares'};
+const roleLabel={1:'Administrador',2:'Estudiante',4:'Profesor asesor',6:'Servicios Escolares',7:'Biblioteca',8:'Laboratorios',9:'Centro de Idiomas'};
 const H=()=>({Authorization:`Bearer ${localStorage.getItem('token')}`});
 const dt=v=>v?new Date(v).toLocaleString('es-MX'):'—';
 const d=v=>v?new Date(v).toLocaleDateString('es-MX'):'—';
@@ -35,10 +36,11 @@ export default function ModuloEstadias(){
   const user=JSON.parse(localStorage.getItem('user')||'{}');
   const role=Number(user.id_rol);
   const tabs=useMemo(()=>{
-    if(role===1)return [['resumen','Resumen','dashboard'],['periodos','Periodos','calendar'],['grupos-escolares','Grupos escolares','users'],['tutores','Tutores','teacher'],['grupos-estadia','Grupos de estadía','users'],['talleres','Talleres y entregas','clipboard'],['rubricas','Rúbrica y escala','file'],['expedientes','Expedientes','folder'],['seguros','Seguros','shield']];
-    if(role===4)return [['mis-grupos','Mis grupos','users'],['revisiones','Avances por revisar','clipboard'],['empresa-evaluaciones','Evaluación de empresa','building'],['guias','Guías','file'],['perfil','Mi perfil','user']];
-    if(role===6)return [['alumnos','Alumnos','users'],['seguros','Seguro facultativo','shield'],['expedientes','Expedientes','folder'],['perfil','Mi perfil','user']];
-    return [['mi-estadia','Mi estadía','briefcase'],['avances','Mis entregas','clipboard'],['seguro','Seguro facultativo','shield'],['guias','Guía','file']];
+    if(role===1)return [['resumen','Resumen','dashboard'],['periodos','Periodos','calendar'],['grupos-escolares','Grupos escolares','users'],['tutores','Tutores','teacher'],['grupos-estadia','Grupos de estadía','users'],['talleres','Talleres y entregas','clipboard'],['rubricas','Rúbrica y escala','file'],['expedientes','Expedientes','folder'],['seguros','Seguros','shield'],['cierre','Cierre institucional','check']];
+    if(role===4)return [['mis-grupos','Mis grupos','users'],['revisiones','Avances por revisar','clipboard'],['empresa-evaluaciones','Evaluación de empresa','building'],['cierre','Toma de protesta','check'],['guias','Guías','file'],['perfil','Mi perfil','user']];
+    if(role===6)return [['alumnos','Alumnos','users'],['seguros','Seguro facultativo','shield'],['expedientes','Expedientes','folder'],['cierre','Donativos / cierre','check'],['perfil','Mi perfil','user']];
+    if([7,8,9].includes(role))return [['cierre','Validaciones','check']];
+    return [['mi-estadia','Mi estadía','briefcase'],['avances','Mis entregas','clipboard'],['seguro','Seguro facultativo','shield'],['cierre','Cierre de estadía','check'],['guias','Guía','file']];
   },[role]);
   const [tab,setTab]=useState(tabs[0]?.[0]||'resumen');
   const [busy,setBusy]=useState(true);
@@ -72,7 +74,7 @@ export default function ModuloEstadias(){
   const notify=(t,type='success')=>showToast(t,{type});
   const common=async()=>{const [p,g,t,r,gu]=await Promise.all([api('/periodos'),api('/grupos'),api('/talleres'),api('/rubricas'),api('/guias')]);setPeriodos(p.periodos||[]);setGrupos(g.grupos||[]);setTalleres(t.talleres||[]);setRubricas(r.rubricas||[]);setGuias(gu.guias||[]);};
   const load=async(foreground=true)=>{if(foreground)setBusy(true);try{
-    await common();
+    if(![7,8,9].includes(role)) await common();
     if(role===1){const [c,s,e,gr,nv,cr]=await Promise.all([api('/catalogos-v6'),api('/seguros'),api('/expedientes'),api('/resumen-v61'),api('/niveles-evaluacion'),api('/criterios-taller')]);setCatalogos(c);setEscala(c.config||escala);setSeguros(s.seguros||[]);setExpedientes(e.expedientes||[]);setGraficas(gr.graficas||{});setNivelesInstitucionales(nv.niveles||[]);setCriteriosUniversales(cr.criterios||[]);}
     if(role===6){const [a,s,e,p]=await Promise.all([api('/servicios/alumnos'),api('/seguros'),api('/expedientes'),authApi('/me')]);setAlumnos(a.alumnos||[]);setSeguros(s.seguros||[]);setExpedientes(e.expedientes||[]);setPerfil({...p.usuario,nueva_password:''});}
     if(role===4){const [gg,ep,ev,p]=await Promise.all([api('/profesor/grupos'),api('/profesor/entregas'),api('/profesor/evaluaciones-empresa'),authApi('/me')]);setMisGrupos(gg.grupos||[]);setEntregasProfesor(ep.entregas||[]);setEvaluacionesEmpresa(ev.evaluaciones||[]);setPerfil({...p.usuario,nueva_password:''});}
@@ -131,8 +133,9 @@ export default function ModuloEstadias(){
 
 
   if(busy)return <div className="internship-loading">Cargando SkillMatch…</div>;
-  return <div className="app internship-app"><aside className="sidebar"><div className="sidebar-logo"><div className="brand">Skill<span>Match</span></div><div className="brand-sub">Módulo de estadías</div></div><div className="nav-wrap"><div className="nav-group-label">{roleLabel[role]}</div>{tabs.map(([k,l,i])=><button key={k} className={`nav-item ${tab===k?'active':''}`} onClick={()=>setTab(k)}><span className="nav-icon"><AppIcon name={i}/></span>{l}</button>)}</div><div className="sidebar-bottom">{role!==6&&<button onClick={()=>nav(role===2?'/dashboard-estudiante':role===4?'/dashboard-profesores':'/dashboard-vinculacion')}>Volver al panel</button>}<button onClick={()=>{localStorage.clear();nav('/login')}}>Cerrar sesión</button></div></aside>
+  return <div className="app internship-app"><aside className="sidebar"><div className="sidebar-logo"><div className="brand">Skill<span>Match</span></div><div className="brand-sub">Módulo de estadías</div></div><div className="nav-wrap"><div className="nav-group-label">{roleLabel[role]}</div>{tabs.map(([k,l,i])=><button key={k} className={`nav-item ${tab===k?'active':''}`} onClick={()=>setTab(k)}><span className="nav-icon"><AppIcon name={i}/></span>{l}</button>)}</div><div className="sidebar-bottom">{![6,7,8,9].includes(role)&&<button onClick={()=>nav(role===2?'/dashboard-estudiante':role===4?'/dashboard-profesores':'/dashboard-vinculacion')}>Volver al panel</button>}<button onClick={()=>{localStorage.clear();nav('/login')}}>Cerrar sesión</button></div></aside>
   <main className="internship-main"><header className="internship-header"><div><span className="eyebrow">SKILLMATCH · ESTADÍAS</span><h1>{tabs.find(x=>x[0]===tab)?.[1]}</h1><p>Seguimiento institucional con el mismo diseño y navegación de SkillMatch.</p></div><span className="role-pill">{roleLabel[role]}</span></header>
+  {tab==='cierre'&&<CierreEstadiaPanel role={role}/>}
 
   {tab==='resumen'&&<section><Title e="CONTROL INSTITUCIONAL" t="Resumen de estadías"/><div className="metric-grid"><Metric l="Periodos" v={periodos.length}/><Metric l="Grupos escolares" v={catalogos.gruposEscolares?.length||0}/><Metric l="Grupos de estadía" v={grupos.length}/><Metric l="Tutores activos" v={(catalogos.profesores||[]).filter(x=>x.tutor_estadia).length}/></div><div className="chart-grid"><Panel><Title e="DISTRIBUCIÓN" t="Grupos por carrera"/><BarChart items={graficas.porCarrera||[]}/></Panel><Panel><Title e="PERIODOS" t="Grupos por periodo"/><BarChart items={graficas.porPeriodo||[]}/></Panel><Panel><Title e="CAPACIDAD" t="Alumnos por grupo de estadía"/><BarChart items={graficas.alumnosPorGrupo||[]}/></Panel></div><Info>El administrador controla periodos, grupos, tutores, talleres, entregas, rúbrica y escala de evaluación. Los profesores únicamente acompañan y evalúan a sus grupos.</Info></section>}
 

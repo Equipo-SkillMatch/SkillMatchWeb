@@ -8,6 +8,8 @@ router.get('/version', publicController.obtenerVersion);
 router.get('/grupos-escolares', publicController.listarGruposEscolaresPublicos);
 router.get('/evaluacion-empresa/:token', publicController.obtenerEvaluacionEmpresaPublica);
 router.post('/evaluacion-empresa/:token', publicController.responderEvaluacionEmpresaPublica);
+router.get('/aprobacion-memoria/:token', publicController.obtenerAprobacionMemoriaEmpresa);
+router.post('/aprobacion-memoria/:token', publicController.responderAprobacionMemoriaEmpresa);
 router.get('/proyectos', publicController.listarProyectosPublicos);
 router.get('/proyectos/:id', publicController.obtenerDetalleProyecto);
 

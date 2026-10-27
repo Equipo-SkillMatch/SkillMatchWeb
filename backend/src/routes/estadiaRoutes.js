@@ -82,4 +82,21 @@ router.put('/estadias/:idEstadia/inicio-formal', controller.actualizarInicioForm
 router.get('/estadias/:idEstadia/seguimientos', controller.listarSeguimientos);
 router.post('/estadias/:idEstadia/seguimientos', controller.crearSeguimiento);
 
+
+// V8: cierre institucional y toma de protesta
+router.get('/cierre/mi', controller.miCierreEstadia);
+router.post('/cierre/solicitar', controller.solicitarCierreInicial);
+router.post('/cierre/ingles', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirExamenIngles);
+router.post('/cierre/donativo', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirDonativo);
+router.get('/cierre/validaciones', controller.validacionesInstitucionales);
+router.put('/cierre/validaciones/:id', controller.resolverValidacionInstitucional);
+router.get('/empresa/memorias-cierre', controller.memoriasCierreEmpresa);
+router.put('/empresa/memorias-cierre/:id', controller.resolverMemoriaEmpresaCuenta);
+router.get('/profesor/estadias/:idEstadia/evaluadores', controller.profesoresEvaluadoresToma);
+router.post('/profesor/estadias/:idEstadia/toma-protesta', controller.programarTomaProtesta);
+router.get('/profesor/tomas-protesta', controller.tomasProtestaProfesor);
+router.get('/profesor/cierres', controller.cierresProfesor);
+router.post('/profesor/tomas-protesta/:idToma/evaluacion', controller.evaluarTomaProtesta);
+router.get('/cierre/overview', controller.cierreOverviewAdmin);
+
 module.exports = router;

@@ -1,0 +1,39 @@
+SKILLMATCH V8 - CIERRE INSTITUCIONAL Y TOMA DE PROTESTA
+========================================================
+
+1. RESPALDA LA BASE DE DATOS.
+
+2. Ejecuta:
+   \i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/17_estadias_v8_cierre_institucional.sql'
+
+3. Debe mostrar:
+   Migracion 17 aplicada. SkillMatch V8 cierre institucional listo.
+
+4. Crea las cuentas institucionales para los nuevos roles desde administracion/BD:
+   - id_rol 7 = biblioteca
+   - id_rol 8 = laboratorios
+   - id_rol 9 = centro_idiomas
+
+5. Sube codigo:
+   git add .
+   git commit -m "version 8 cierre institucional"
+   git push origin main
+
+6. La API /api/public/version debe mostrar:
+   8.0.0-cierre-institucional-toma-protesta
+
+PRUEBA RECOMENDADA
+------------------
+Alumno listo para cierre
+ -> Iniciar cierre
+ -> Biblioteca aprueba
+ -> Laboratorios aprueba
+ -> Alumno sube examen de ingles
+ -> Centro de Idiomas aprueba
+ -> Alumno sube donativo
+ -> Servicios Escolares aprueba
+ -> Empresa aprueba memoria tecnica
+ -> Asesor programa toma de protesta con 2 profesores
+ -> Evaluador 1 califica
+ -> Evaluador 2 califica
+ -> Estadía queda TERMINADA y expediente 100%

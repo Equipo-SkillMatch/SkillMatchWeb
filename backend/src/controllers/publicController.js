@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '7.0.0-estadias-evaluacion-seguimiento';
+const APP_VERSION = '8.0.0-cierre-institucional-toma-protesta';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);
@@ -256,4 +256,30 @@ exports.responderEvaluacionEmpresaPublica = async (req,res) => {
     res.json({ok:true,promedio,codigo_final:nearest[0]?.codigo||'NA'});
   }catch(e){try{await conn.rollback();}catch{};console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo guardar la evaluación.'});}
   finally{conn.release();}
+};
+
+// V8 - Aprobacion publica de memoria tecnica por empresa externa.
+exports.obtenerAprobacionMemoriaEmpresa = async (req,res) => {
+  try{
+    const [rows]=await db.query(`SELECT v.id_validacion,v.estado,v.observaciones,e.memoria_final_ruta,e.memoria_final_nombre,e.proyecto_titulo,e.empresa_razon_social,
+      u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre
+      FROM validaciones_cierre_estadia v JOIN estadias e ON e.id_estadia=v.id_estadia
+      JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
+      WHERE v.area='empresa_memoria' AND v.token_publico=? LIMIT 1`,[req.params.token]);
+    if(!rows.length)return res.status(404).json({ok:false,mensaje:'Enlace de aprobación no válido.'});
+    res.json({ok:true,solicitud:rows[0]});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar la memoria técnica.'});}
+};
+
+exports.responderAprobacionMemoriaEmpresa = async (req,res) => {
+  const estado=String(req.body.estado||'');
+  if(!['aprobado','rechazado','requiere_correccion'].includes(estado))return res.status(400).json({ok:false,mensaje:'Estado inválido.'});
+  try{
+    const [rows]=await db.query(`SELECT id_validacion FROM validaciones_cierre_estadia WHERE area='empresa_memoria' AND token_publico=? LIMIT 1`,[req.params.token]);
+    if(!rows.length)return res.status(404).json({ok:false,mensaje:'Enlace de aprobación no válido.'});
+    await db.query(`UPDATE validaciones_cierre_estadia SET estado=?,observaciones=?,revisado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_validacion=?`,
+      [estado,req.body.observaciones||null,rows[0].id_validacion]);
+    res.json({ok:true});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo registrar la aprobación.'});}
 };

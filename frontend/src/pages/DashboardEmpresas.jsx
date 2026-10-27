@@ -64,6 +64,9 @@ export default function DashboardEmpresas() {
   const [evalPractica, setEvalPractica] = useState(null);
   const [evalAnswers, setEvalAnswers] = useState({});
   const [evalMeta, setEvalMeta] = useState({ evaluador_nombre:'', evaluador_correo:'', evaluador_cargo:'', observaciones:'' });
+  const [memoriasCierre,setMemoriasCierre]=useState([]);
+  const [memoriaSeleccionada,setMemoriaSeleccionada]=useState(null);
+  const [memoriaObservaciones,setMemoriaObservaciones]=useState('');
 
   // ESTADOS PARA LA EXPERIENCIA DE MATCH
   const [selectedSkills, setSelectedSkills] = useState([]); 
@@ -77,6 +80,7 @@ export default function DashboardEmpresas() {
     cargarDashboard();
     cargarPerfilEmpresa();
     cargarPracticantes();
+    cargarMemoriasCierre();
   }, []);
 
   const cargarPracticantes = async () => {
@@ -109,6 +113,24 @@ export default function DashboardEmpresas() {
       const res=await fetch(`${API_BASE}/estadias/empresa/evaluaciones/${evalPractica.evaluacion.id_evaluacion_empresa}/responder`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...evalMeta,respuestas:preguntas.map(p=>({id_pregunta:p.id_pregunta,codigo_nivel:evalAnswers[p.id_pregunta]}))})});
       const json=await res.json();if(!res.ok||!json.ok)throw new Error(json.mensaje||'No se pudo guardar.');
       showToast(`Evaluación enviada: ${json.codigo_final} · ${json.promedio}`,{type:'success'});setEvalPractica(null);await cargarPracticantes();
+    }catch(e){showToast(e.message,{type:'error'});}
+  };
+
+
+  const cargarMemoriasCierre = async () => {
+    try {
+      const res=await fetch(`${API_BASE}/estadias/empresa/memorias-cierre`,{headers:{Authorization:`Bearer ${localStorage.getItem('token')}`}});
+      const json=await res.json();
+      if(res.ok&&json.ok)setMemoriasCierre(json.memorias||[]);
+    } catch(error){console.error('Error al cargar memorias de cierre:',error);}
+  };
+
+  const resolverMemoriaCierre = async (estado) => {
+    if(!memoriaSeleccionada)return;
+    try{
+      const res=await fetch(`${API_BASE}/estadias/empresa/memorias-cierre/${memoriaSeleccionada.id_validacion}`,{method:'PUT',headers:{Authorization:`Bearer ${localStorage.getItem('token')}`,'Content-Type':'application/json'},body:JSON.stringify({estado,observaciones:memoriaObservaciones})});
+      const json=await res.json();if(!res.ok||!json.ok)throw new Error(json.mensaje||'No se pudo guardar.');
+      showToast(estado==='aprobado'?'Memoria aprobada.':'Respuesta registrada.',{type:estado==='aprobado'?'success':'warning'});setMemoriaSeleccionada(null);setMemoriaObservaciones('');await cargarMemoriasCierre();
     }catch(e){showToast(e.message,{type:'error'});}
   };
 
@@ -431,6 +453,9 @@ export default function DashboardEmpresas() {
           </div>
           <div className={`nav-item ${view === "practicantes" ? "active" : ""}`} onClick={() => handleNavClick("practicantes")}>
             <span className="icon"><AppIcon name="clipboard" /></span> Evaluación practicantes
+          </div>
+          <div className={`nav-item ${view === "memorias-cierre" ? "active" : ""}`} onClick={() => handleNavClick("memorias-cierre")}>
+            <span className="icon"><AppIcon name="file" /></span> Memorias por aprobar
           </div>
         </nav>
         <div className="sidebar-bottom">
@@ -822,6 +847,16 @@ export default function DashboardEmpresas() {
           </>
         )}
 
+
+        {view === "memorias-cierre" && (
+          <>
+            <div className="topbar"><div className="topbar-left-wrap"><button className="hamburger-btn" onClick={() => setIsMobileMenuOpen(true)}>☰</button><div className="topbar-title">Memorias <span>por aprobar</span></div></div></div>
+            <div className="content"><div className="section-header"><div><div className="section-title">Revisión de memoria técnica</div><p style={{color:'#64748b',marginTop:6}}>Verifica que la versión final no incluya información sensible o confidencial de la empresa.</p></div></div>
+              <div className="table-wrap"><div className="table-header" style={{gridTemplateColumns:'1.3fr 1.3fr 1fr .8fr'}}><div>Alumno</div><div>Proyecto</div><div>Memoria</div><div>Estado</div></div>{memoriasCierre.length?memoriasCierre.map(m=><div className="table-row" style={{gridTemplateColumns:'1.3fr 1.3fr 1fr .8fr'}} key={m.id_validacion}><div><div className="vacante-title">{m.nombre} {m.apellido}</div><div className="vacante-area">{m.matricula} · {m.grupo_nombre}</div></div><div>{m.proyecto_titulo||'—'}</div><div>{m.memoria_final_ruta?<a className="action-btn" href={buildFileUrl(m.memoria_final_ruta)} target="_blank" rel="noreferrer">Abrir PDF</a>:'Sin archivo'}</div><div><button className="action-btn" onClick={()=>{setMemoriaSeleccionada(m);setMemoriaObservaciones(m.observaciones||'')}}>{m.estado==='en_revision'?'Revisar':m.estado}</button></div></div>):<div style={{padding:30,textAlign:'center'}}>No hay memorias pendientes de revisión.</div>}</div>
+            </div>
+          </>
+        )}
+
         {view === "perfil" && (
            <>
              <div className="topbar">
@@ -899,6 +934,10 @@ export default function DashboardEmpresas() {
            </>
         )}
       </main>
+
+      {memoriaSeleccionada && (
+        <div className="modal-overlay" onClick={()=>setMemoriaSeleccionada(null)}><div className="modal" style={{maxWidth:720}} onClick={e=>e.stopPropagation()}><div className="modal-title">Aprobación de memoria técnica</div><p>{memoriaSeleccionada.nombre} {memoriaSeleccionada.apellido} · {memoriaSeleccionada.proyecto_titulo}</p>{memoriaSeleccionada.memoria_final_ruta&&<a className="btn btn-primary" href={buildFileUrl(memoriaSeleccionada.memoria_final_ruta)} target="_blank" rel="noreferrer">Abrir memoria</a>}<div className="form-group" style={{marginTop:18}}><label className="form-label">Observaciones</label><textarea className="form-textarea" value={memoriaObservaciones} onChange={e=>setMemoriaObservaciones(e.target.value)} placeholder="Indica si detectas información sensible o algún ajuste necesario"/></div><div style={{display:'flex',gap:10,flexWrap:'wrap',justifyContent:'flex-end'}}><button className="btn btn-ghost" onClick={()=>setMemoriaSeleccionada(null)}>Cerrar</button><button className="btn btn-ghost" onClick={()=>resolverMemoriaCierre('requiere_correccion')}>Solicitar corrección</button><button className="btn btn-primary" onClick={()=>resolverMemoriaCierre('aprobado')}>Aprobar memoria</button></div></div></div>
+      )}
 
       {evalPractica && (
         <div className="modal-overlay" onClick={()=>setEvalPractica(null)}><div className="modal" style={{maxWidth:900}} onClick={e=>e.stopPropagation()}><div className="modal-title">Evaluación de estadía · {evalPractica.evaluacion.momento==='inicial'?'Primera evaluación':'Evaluación final'}</div><p style={{color:'#64748b'}}>{evalPractica.evaluacion.nombre} {evalPractica.evaluacion.apellido} · {evalPractica.evaluacion.proyecto_titulo}</p><div className="form-row"><div className="form-group"><label className="form-label">Nombre del evaluador</label><input className="form-input" value={evalMeta.evaluador_nombre} onChange={e=>setEvalMeta({...evalMeta,evaluador_nombre:e.target.value})}/></div><div className="form-group"><label className="form-label">Cargo</label><input className="form-input" value={evalMeta.evaluador_cargo} onChange={e=>setEvalMeta({...evalMeta,evaluador_cargo:e.target.value})}/></div></div>{['desempeno','actitud'].map(cat=><div key={cat} style={{marginTop:22}}><h3 style={{color:'#244E7C'}}>{cat==='desempeno'?'Desempeño':'Actitud'}</h3>{(evalPractica.preguntas||[]).filter(p=>p.categoria===cat).map(p=><div key={p.id_pregunta} style={{padding:'12px 0',borderBottom:'1px solid #e5e7eb'}}><div style={{fontWeight:600,marginBottom:8}}>{p.orden}. {p.pregunta}</div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{(evalPractica.niveles||[]).map(n=><button type="button" className={`action-btn ${evalAnswers[p.id_pregunta]===n.codigo?'active':''}`} key={n.codigo} onClick={()=>setEvalAnswers({...evalAnswers,[p.id_pregunta]:n.codigo})}>{n.codigo} · {n.nombre}</button>)}</div></div>)}</div>)}<div className="form-group" style={{marginTop:20}}><label className="form-label">Observaciones</label><textarea className="form-textarea" value={evalMeta.observaciones} onChange={e=>setEvalMeta({...evalMeta,observaciones:e.target.value})}/></div><div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}><button className="btn btn-ghost" onClick={()=>setEvalPractica(null)}>Cerrar</button><button className="btn btn-primary" onClick={guardarEvaluacionPractica}>Enviar evaluación</button></div></div></div>
