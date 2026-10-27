@@ -106,12 +106,12 @@ exports.listarPeriodos = async (_req, res) => {
 
 exports.crearPeriodo = async (req, res) => {
   if (!requireRoles(req, res, [1])) return;
-  const { nombre, clave, fecha_inicio, fecha_fin, fecha_limite_registro_empresa, fecha_limite_seguro, instrucciones } = req.body;
+  const { nombre, clave, fecha_inicio, fecha_fin, fecha_limite_registro_empresa, fecha_limite_seguro, instrucciones, monto_donativo } = req.body;
   if (!nombre || !clave || !fecha_inicio || !fecha_fin) return res.status(400).json({ ok:false, mensaje:'Nombre, clave y fechas son obligatorios.' });
   try {
     const [result] = await db.query(`INSERT INTO periodos_estadia
-      (nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,creado_por)
-      VALUES (?,?,?,?,?,?,?,?)`, [nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa||null,fecha_limite_seguro||null,instrucciones||null,req.usuario.id_usuario]);
+      (nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,monto_donativo,creado_por)
+      VALUES (?,?,?,?,?,?,?,?,?)`, [nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa||null,fecha_limite_seguro||null,instrucciones||null,Number(monto_donativo||0),req.usuario.id_usuario]);
     res.status(201).json({ ok:true, id_periodo: result.insertId });
   } catch (e) { res.status(500).json({ ok:false, mensaje:e.code==='23505'?'La clave del periodo ya existe.':'No se pudo crear el periodo.' }); }
 };
@@ -387,7 +387,7 @@ exports.revisarEntrega = async (req,res) => {
     const cfg=await configCalificaciones();
     const valores={SA:Number(cfg.valor_sa),DE:Number(cfg.valor_de),AU:Number(cfg.valor_au)};
     await db.query('INSERT INTO revisiones_avances_estadia (id_entrega,id_profesor,nivel,calificacion,observaciones,requiere_correccion) VALUES (?,?,?,?,?,?)',[req.params.id,req.usuario.id_usuario,nivel,valores[nivel],req.body.observaciones||null,requiere]);
-    await db.query('UPDATE entregas_avances_estadia SET estado=? WHERE id_entrega=?',[requiere?'requiere_correccion':'aprobado',req.params.id]);
+    await db.query("UPDATE entregas_avances_estadia SET estado='aprobado' WHERE id_entrega=?",[req.params.id]);
     const [ent]=await db.query('SELECT id_estadia FROM entregas_avances_estadia WHERE id_entrega=?',[req.params.id]);
     if(ent[0]) await recalcularExpediente(ent[0].id_estadia);
     res.json({ok:true,calificacion:valores[nivel]});
@@ -454,10 +454,10 @@ async function configCalificaciones() {
 
 exports.actualizarPeriodo = async (req,res) => {
   if(!requireRoles(req,res,[1])) return;
-  const {nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,activo}=req.body;
+  const {nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,monto_donativo,activo}=req.body;
   try{
-    await db.query(`UPDATE periodos_estadia SET nombre=COALESCE(?,nombre),clave=COALESCE(?,clave),fecha_inicio=COALESCE(?,fecha_inicio),fecha_fin=COALESCE(?,fecha_fin),fecha_limite_registro_empresa=?,fecha_limite_seguro=?,instrucciones=?,activo=COALESCE(?,activo) WHERE id_periodo=?`,
-      [nombre||null,clave||null,fecha_inicio||null,fecha_fin||null,fecha_limite_registro_empresa||null,fecha_limite_seguro||null,instrucciones||null,activo===undefined?null:Boolean(activo),req.params.id]);
+    await db.query(`UPDATE periodos_estadia SET nombre=COALESCE(?,nombre),clave=COALESCE(?,clave),fecha_inicio=COALESCE(?,fecha_inicio),fecha_fin=COALESCE(?,fecha_fin),fecha_limite_registro_empresa=?,fecha_limite_seguro=?,instrucciones=?,monto_donativo=COALESCE(?,monto_donativo),activo=COALESCE(?,activo) WHERE id_periodo=?`,
+      [nombre||null,clave||null,fecha_inicio||null,fecha_fin||null,fecha_limite_registro_empresa||null,fecha_limite_seguro||null,instrucciones||null,monto_donativo===undefined?null:Number(monto_donativo||0),activo===undefined?null:Boolean(activo),req.params.id]);
     res.json({ok:true});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo actualizar el periodo.'});}
 };
@@ -618,8 +618,32 @@ exports.entregarEnlace = async (req,res) => {
 exports.subirMemoriaFinal = async (req,res) => {
   if(!requireRoles(req,res,[2])) return;
   if(!req.file || req.file.mimetype!=='application/pdf') return res.status(400).json({ok:false,mensaje:'La memoria final debe ser PDF.'});
-  try{const [rows]=await db.query(`SELECT es.id_estadia,es.memoria_final_habilitada,g.nombre grupo,u.nombre,u.apellido FROM estadias es JOIN grupos_estadia g ON g.id_grupo=es.id_grupo JOIN usuarios u ON u.id_usuario=es.id_estudiante WHERE es.id_estudiante=? ORDER BY es.creada_en DESC LIMIT 1`,[req.usuario.id_usuario]);if(!rows.length)return res.status(400).json({ok:false,mensaje:'No tienes estadía registrada.'});const e=rows[0];if(!e.memoria_final_habilitada)return res.status(400).json({ok:false,mensaje:'Tu profesor todavía no ha marcado la memoria como terminada.'});const normal=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]/g,'');const esperado=`${normal(e.grupo)}_${normal(`${e.nombre}${e.apellido}`)}.pdf`.toLowerCase();const recibido=normal(req.file.originalname.replace(/\.pdf$/i,'')).toLowerCase()+'.pdf';if(recibido!==esperado)return res.status(400).json({ok:false,mensaje:`El archivo debe llamarse ${normal(e.grupo)}_${normal(`${e.nombre}${e.apellido}`)}.pdf`});await db.query('UPDATE estadias SET memoria_final_ruta=?,memoria_final_nombre=?,memoria_final_mime=?,memoria_final_subida_en=CURRENT_TIMESTAMP WHERE id_estadia=?',[filePath(req.file),req.file.originalname,req.file.mimetype,e.id_estadia]);await recalcularExpediente(e.id_estadia);res.json({ok:true});}
-  catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo guardar la memoria final.'});}
+  try{
+    const [rows]=await db.query(`SELECT es.id_estadia,es.memoria_final_habilitada,COALESCE(es.memoria_final_version,0) memoria_final_version,
+      g.nombre grupo,u.nombre,u.apellido
+      FROM estadias es JOIN grupos_estadia g ON g.id_grupo=es.id_grupo JOIN usuarios u ON u.id_usuario=es.id_estudiante
+      WHERE es.id_estudiante=? ORDER BY es.creada_en DESC LIMIT 1`,[req.usuario.id_usuario]);
+    if(!rows.length)return res.status(400).json({ok:false,mensaje:'No tienes estadía registrada.'});
+    const e=rows[0];
+    if(!e.memoria_final_habilitada)return res.status(400).json({ok:false,mensaje:'Tu profesor todavía no ha marcado la memoria como terminada.'});
+    const normal=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]/g,'');
+    const nombreEsperado=`${normal(e.grupo)}_${normal(`${e.nombre}${e.apellido}`)}.pdf`;
+    const esperado=nombreEsperado.toLowerCase();
+    const recibido=normal(req.file.originalname.replace(/\.pdf$/i,'')).toLowerCase()+'.pdf';
+    if(recibido!==esperado)return res.status(400).json({ok:false,mensaje:`El archivo debe llamarse ${nombreEsperado}`});
+    const nuevaVersion=Number(e.memoria_final_version||0)+1;
+    const ruta=filePath(req.file);
+    await db.query(`UPDATE estadias SET memoria_final_ruta=?,memoria_final_nombre=?,memoria_final_mime=?,
+      memoria_final_subida_en=CURRENT_TIMESTAMP,memoria_final_version=? WHERE id_estadia=?`,
+      [ruta,req.file.originalname,req.file.mimetype,nuevaVersion,e.id_estadia]);
+
+    await db.query(`UPDATE validaciones_cierre_estadia
+      SET estado='en_revision',observaciones=NULL,revisado_por=NULL,revisado_en=NULL,actualizado_en=CURRENT_TIMESTAMP,enviado_en=CURRENT_TIMESTAMP
+      WHERE id_estadia=? AND area IN ('biblioteca','laboratorios','empresa_memoria')`,[e.id_estadia]);
+
+    await recalcularExpediente(e.id_estadia);
+    res.json({ok:true,memoria_final_ruta:ruta,memoria_final_nombre:req.file.originalname,memoria_final_version:nuevaVersion,mensaje:`Memoria final versión ${nuevaVersion} guardada correctamente.`});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo guardar la memoria final.'});}
 };
 
 exports.autorizarMemoriaFinal = async (req,res) => {
@@ -904,7 +928,7 @@ exports.evaluarEntregaPorCriterios = async (req,res) => {
     const codigo=nearest[0]?.codigo||'NA';
     await conn.query(`INSERT INTO revisiones_avances_estadia(id_entrega,id_profesor,nivel,calificacion,observaciones,requiere_correccion,revisado_en)
       VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP)`,[idEntrega,req.usuario.id_usuario,codigo,promedio,observaciones,Boolean(req.body.requiere_correccion)]);
-    await conn.query(`UPDATE entregas_avances_estadia SET estado=? WHERE id_entrega=?`,[req.body.requiere_correccion?'requiere_correccion':'aprobado',idEntrega]);
+    await conn.query(`UPDATE entregas_avances_estadia SET estado='aprobado' WHERE id_entrega=?`,[idEntrega]);
     await conn.commit();
     await recalcularExpediente(ent[0].id_estadia);
     res.json({ok:true,promedio,codigo});
@@ -925,7 +949,17 @@ exports.detalleEvaluacionEntrega = async (req,res) => {
       FROM criterios_taller_estadia c LEFT JOIN evaluaciones_criterios_taller ev ON ev.id_criterio_taller=c.id_criterio_taller AND ev.id_entrega=?
       WHERE c.numero_taller=? AND c.activo=TRUE ORDER BY c.orden`,[req.params.id,ent[0].numero_avance]);
     const [niveles]=await db.query('SELECT * FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY orden');
-    res.json({ok:true,entrega:ent[0],criterios,niveles});
+    let correccionesPrevias=null;
+    if(Number(ent[0].numero_avance)>1){
+      const [prev]=await db.query(`SELECT r.observaciones,r.calificacion,r.nivel,fa.numero_avance
+        FROM entregas_avances_estadia ea
+        JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance
+        JOIN revisiones_avances_estadia r ON r.id_entrega=ea.id_entrega
+        WHERE ea.id_estadia=? AND fa.numero_avance=? AND r.requiere_correccion=TRUE
+        ORDER BY r.revisado_en DESC LIMIT 1`,[ent[0].id_estadia,Number(ent[0].numero_avance)-1]);
+      correccionesPrevias=prev[0]||null;
+    }
+    res.json({ok:true,entrega:ent[0],criterios,niveles,correcciones_previas:correccionesPrevias});
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar la evaluación.'});}
 };
 
@@ -1121,9 +1155,11 @@ exports.actualizarInicioFormal = async (req,res) => {
 const AREA_BY_ROLE_V8 = { 6:'servicios_escolares', 7:'biblioteca', 8:'laboratorios', 9:'centro_idiomas' };
 
 async function cierrePrerequisitos(idEstadia){
-  const [base]=await db.query(`SELECT e.id_estadia,e.id_estudiante,e.id_profesor,e.id_empresa,e.memoria_final_ruta,e.memoria_final_autorizada,
+  const [base]=await db.query(`SELECT e.id_estadia,e.id_estudiante,e.id_profesor,e.id_empresa,e.memoria_final_ruta,e.memoria_final_nombre,
+    COALESCE(e.memoria_final_version,0) memoria_final_version,e.memoria_final_subida_en,e.memoria_final_autorizada,p.monto_donativo,
     s.estado seguro_estado,COALESCE(i.autorizado,FALSE) inicio_autorizado
-    FROM estadias e LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia
+    FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
+    LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia
     LEFT JOIN inicio_formal_estadia i ON i.id_estadia=e.id_estadia WHERE e.id_estadia=? LIMIT 1`,[idEstadia]);
   if(!base.length) return null;
   const [av]=await db.query(`SELECT COUNT(DISTINCT fa.numero_avance) aprobados
@@ -1228,10 +1264,15 @@ exports.subirDonativo = async (req,res) => {
     if(!x.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
     const vals=await validacionesCierre(x[0].id_estadia);
     if(!vals.some(v=>v.area==='centro_idiomas'&&v.estado==='aprobado'))return res.status(400).json({ok:false,mensaje:'El Centro de Idiomas debe aprobar primero.'});
-    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,ruta_archivo,nombre_archivo,mime_type,enviado_en)
-      VALUES(?,'servicios_escolares','en_revision',?,?,?,CURRENT_TIMESTAMP)
-      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',ruta_archivo=EXCLUDED.ruta_archivo,nombre_archivo=EXCLUDED.nombre_archivo,mime_type=EXCLUDED.mime_type,enviado_en=CURRENT_TIMESTAMP,observaciones=NULL,revisado_por=NULL,revisado_en=NULL`,
-      [x[0].id_estadia,filePath(req.file),req.file.originalname,req.file.mimetype]);
+    const [estInfo]=await db.query(`SELECT p.monto_donativo FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo WHERE e.id_estadia=?`,[x[0].id_estadia]);
+    const referencia=`DON-${new Date().getFullYear()}-${String(x[0].id_estadia).padStart(6,'0')}`;
+    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,ruta_archivo,nombre_archivo,mime_type,enviado_en,referencia_donativo,monto_donativo)
+      VALUES(?,'servicios_escolares','en_revision',?,?,?,CURRENT_TIMESTAMP,?,?)
+      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',ruta_archivo=EXCLUDED.ruta_archivo,nombre_archivo=EXCLUDED.nombre_archivo,mime_type=EXCLUDED.mime_type,enviado_en=CURRENT_TIMESTAMP,
+      referencia_donativo=COALESCE(validaciones_cierre_estadia.referencia_donativo,EXCLUDED.referencia_donativo),
+      monto_donativo=COALESCE(validaciones_cierre_estadia.monto_donativo,EXCLUDED.monto_donativo),
+      observaciones=NULL,revisado_por=NULL,revisado_en=NULL`,
+      [x[0].id_estadia,filePath(req.file),req.file.originalname,req.file.mimetype,referencia,Number(estInfo[0]?.monto_donativo||0)]);
     res.json({ok:true,mensaje:'Donativo enviado a Servicios Escolares.'});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo enviar el comprobante de donativo.'});}
 };
@@ -1259,8 +1300,25 @@ exports.resolverValidacionInstitucional = async (req,res) => {
   try{
     const [v]=await db.query('SELECT * FROM validaciones_cierre_estadia WHERE id_validacion=? AND area=? LIMIT 1',[req.params.id,area]);
     if(!v.length)return res.status(404).json({ok:false,mensaje:'Validación no encontrada para tu área.'});
+    const [est]=await db.query('SELECT memoria_final_ruta FROM estadias WHERE id_estadia=?',[v[0].id_estadia]);
+    if(['biblioteca','laboratorios'].includes(area) && !est[0]?.memoria_final_ruta)
+      return res.status(400).json({ok:false,mensaje:'El alumno todavía no tiene una memoria técnica final cargada.'});
+    if(area==='centro_idiomas' && !v[0].ruta_archivo)
+      return res.status(400).json({ok:false,mensaje:'El alumno todavía no ha enviado el comprobante del examen de inglés.'});
+    if(area==='servicios_escolares' && !v[0].ruta_archivo)
+      return res.status(400).json({ok:false,mensaje:'El alumno todavía no ha enviado el comprobante del donativo.'});
     await db.query(`UPDATE validaciones_cierre_estadia SET estado=?,observaciones=?,revisado_por=?,revisado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_validacion=?`,
       [estado,req.body.observaciones||null,req.usuario.id_usuario,req.params.id]);
+    if(area==='centro_idiomas' && estado==='aprobado'){
+      const referencia=`DON-${new Date().getFullYear()}-${String(v[0].id_estadia).padStart(6,'0')}`;
+      const [m]=await db.query(`SELECT p.monto_donativo FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo WHERE e.id_estadia=?`,[v[0].id_estadia]);
+      await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,referencia_donativo,monto_donativo)
+        VALUES(?,'servicios_escolares','pendiente',?,?)
+        ON CONFLICT(id_estadia,area) DO UPDATE SET
+        referencia_donativo=COALESCE(validaciones_cierre_estadia.referencia_donativo,EXCLUDED.referencia_donativo),
+        monto_donativo=COALESCE(validaciones_cierre_estadia.monto_donativo,EXCLUDED.monto_donativo)`,
+        [v[0].id_estadia,referencia,Number(m[0]?.monto_donativo||0)]);
+    }
     await recalcularExpediente(v[0].id_estadia);
     res.json({ok:true});
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo actualizar la validación.'});}
@@ -1269,7 +1327,8 @@ exports.resolverValidacionInstitucional = async (req,res) => {
 exports.memoriasCierreEmpresa = async (req,res) => {
   if(!requireRoles(req,res,[3])) return;
   try{
-    const [rows]=await db.query(`SELECT v.id_validacion,v.estado,v.observaciones,e.id_estadia,e.memoria_final_ruta,e.memoria_final_nombre,e.proyecto_titulo,
+    const [rows]=await db.query(`SELECT v.id_validacion,v.estado,v.observaciones,v.calificacion_memoria_empresa,e.id_estadia,e.memoria_final_ruta,e.memoria_final_nombre,
+      COALESCE(e.memoria_final_version,0) memoria_final_version,e.proyecto_titulo,
       u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre
       FROM validaciones_cierre_estadia v JOIN estadias e ON e.id_estadia=v.id_estadia
       JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
@@ -1282,13 +1341,15 @@ exports.memoriasCierreEmpresa = async (req,res) => {
 exports.resolverMemoriaEmpresaCuenta = async (req,res) => {
   if(!requireRoles(req,res,[3])) return;
   const estado=String(req.body.estado||'');
+  const calificacion=req.body.calificacion===undefined||req.body.calificacion===null?null:Number(req.body.calificacion);
   if(!['aprobado','rechazado','requiere_correccion'].includes(estado))return res.status(400).json({ok:false,mensaje:'Estado inválido.'});
+  if(estado==='aprobado' && ![8,9,10].includes(calificacion))return res.status(400).json({ok:false,mensaje:'Selecciona una calificación de 8, 9 o 10 para aprobar la memoria.'});
   try{
     const [v]=await db.query(`SELECT v.id_validacion FROM validaciones_cierre_estadia v JOIN estadias e ON e.id_estadia=v.id_estadia
       WHERE v.id_validacion=? AND v.area='empresa_memoria' AND e.id_empresa=? LIMIT 1`,[req.params.id,req.usuario.id_usuario]);
     if(!v.length)return res.status(404).json({ok:false,mensaje:'Solicitud no encontrada para tu empresa.'});
-    await db.query(`UPDATE validaciones_cierre_estadia SET estado=?,observaciones=?,revisado_por=?,revisado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_validacion=?`,
-      [estado,req.body.observaciones||null,req.usuario.id_usuario,req.params.id]);
+    await db.query(`UPDATE validaciones_cierre_estadia SET estado=?,observaciones=?,calificacion_memoria_empresa=?,revisado_por=?,revisado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_validacion=?`,
+      [estado,req.body.observaciones||null,estado==='aprobado'?calificacion:null,req.usuario.id_usuario,req.params.id]);
     const [vv]=await db.query('SELECT id_estadia FROM validaciones_cierre_estadia WHERE id_validacion=?',[req.params.id]);
     if(vv[0]) await recalcularExpediente(vv[0].id_estadia);
     res.json({ok:true});

@@ -1,0 +1,14 @@
+SKILLMATCH V8.1 - DESPLIEGUE
+
+1) Reemplazar los archivos del proyecto con la V8.1.
+2) Ejecutar en PostgreSQL:
+   \i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/18_estadias_v8_1_ajustes_cierre.sql'
+3) En Administración > Periodos, editar el periodo activo y capturar el Monto de donativo.
+4) Subir cambios a main:
+   git add .
+   git commit -m "version 8.1 ajustes cierre estadia"
+   git push origin main
+5) Verificar despliegue de backend y frontend.
+6) Probar con un alumno completo: talleres > memoria > biblioteca > laboratorios > idiomas > donativo > empresa > toma de protesta.
+
+No volver a ejecutar las migraciones 13-17 si ya fueron aplicadas.

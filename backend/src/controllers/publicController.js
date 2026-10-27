@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '8.0.0-cierre-institucional-toma-protesta';
+const APP_VERSION = '8.1.0-cierre-institucional-ajustes';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);
@@ -261,7 +261,8 @@ exports.responderEvaluacionEmpresaPublica = async (req,res) => {
 // V8 - Aprobacion publica de memoria tecnica por empresa externa.
 exports.obtenerAprobacionMemoriaEmpresa = async (req,res) => {
   try{
-    const [rows]=await db.query(`SELECT v.id_validacion,v.estado,v.observaciones,e.memoria_final_ruta,e.memoria_final_nombre,e.proyecto_titulo,e.empresa_razon_social,
+    const [rows]=await db.query(`SELECT v.id_validacion,v.estado,v.observaciones,v.calificacion_memoria_empresa,e.memoria_final_ruta,e.memoria_final_nombre,
+      COALESCE(e.memoria_final_version,0) memoria_final_version,e.proyecto_titulo,e.empresa_razon_social,
       u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre
       FROM validaciones_cierre_estadia v JOIN estadias e ON e.id_estadia=v.id_estadia
       JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
@@ -274,12 +275,14 @@ exports.obtenerAprobacionMemoriaEmpresa = async (req,res) => {
 
 exports.responderAprobacionMemoriaEmpresa = async (req,res) => {
   const estado=String(req.body.estado||'');
+  const calificacion=req.body.calificacion===undefined||req.body.calificacion===null?null:Number(req.body.calificacion);
   if(!['aprobado','rechazado','requiere_correccion'].includes(estado))return res.status(400).json({ok:false,mensaje:'Estado inválido.'});
+  if(estado==='aprobado' && ![8,9,10].includes(calificacion))return res.status(400).json({ok:false,mensaje:'Selecciona una calificación de 8, 9 o 10 para aprobar la memoria.'});
   try{
     const [rows]=await db.query(`SELECT id_validacion FROM validaciones_cierre_estadia WHERE area='empresa_memoria' AND token_publico=? LIMIT 1`,[req.params.token]);
     if(!rows.length)return res.status(404).json({ok:false,mensaje:'Enlace de aprobación no válido.'});
-    await db.query(`UPDATE validaciones_cierre_estadia SET estado=?,observaciones=?,revisado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_validacion=?`,
-      [estado,req.body.observaciones||null,rows[0].id_validacion]);
+    await db.query(`UPDATE validaciones_cierre_estadia SET estado=?,observaciones=?,calificacion_memoria_empresa=?,revisado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_validacion=?`,
+      [estado,req.body.observaciones||null,estado==='aprobado'?calificacion:null,rows[0].id_validacion]);
     res.json({ok:true});
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo registrar la aprobación.'});}
 };

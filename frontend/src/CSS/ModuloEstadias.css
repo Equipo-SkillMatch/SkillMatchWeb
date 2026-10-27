@@ -33,3 +33,14 @@
 
 /* V8 · cierre institucional */
 .closure-layout{display:grid;gap:18px}.closure-hero{display:flex;justify-content:space-between;gap:24px;align-items:center}.closure-percent{min-width:140px;text-align:center;padding:18px;border-radius:18px;background:var(--soft-bg,#f3f7fb)}.closure-percent strong{display:block;font-size:30px;color:var(--primary,#0f5ea8)}.closure-percent span{font-size:12px;color:#64748b}.closure-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0}.closure-check{border:1px solid #dbe4ee;border-radius:14px;padding:14px;display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}.closure-check strong{grid-column:2;font-size:12px;color:#b45309}.closure-check.ok{background:#f0fdf4;border-color:#bbf7d0}.closure-check.ok strong{color:#15803d}.closure-steps{display:grid;gap:10px;margin:16px 0}.closure-step{display:grid;grid-template-columns:36px 1fr auto;gap:12px;align-items:center;padding:14px;border:1px solid #e2e8f0;border-radius:14px}.closure-step small{display:block;color:#64748b;margin-top:4px}.step-num{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#eaf2fb;color:#0f5ea8;font-weight:800}.step-note{grid-column:2/-1;margin:0;padding:8px 10px;background:#fff7ed;border-radius:10px;color:#9a3412}.upload-line{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:14px 0}.upload-line label{display:grid;gap:6px;min-width:280px}.status-chip.bad{background:#fef2f2;color:#b91c1c}.closure-layout textarea{min-height:92px}
+
+/* ===== V8.1: cierre institucional y memoria final ===== */
+.memory-current{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;margin:14px 0;border:1px solid #d9e5f1;border-radius:14px;background:#f8fbff}
+.memory-current div{display:grid;gap:4px}.memory-current small{color:#64748b}
+.correction-note{margin:8px 0;padding:9px 11px;border-radius:10px;background:#fff8e8;color:#7c5a12;font-size:.88rem}
+.current-step{display:block;margin-top:12px;color:#164f7e}
+.step-grade{font-size:.82rem;color:#164f7e;white-space:nowrap}
+.donation-box{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px;margin:16px 0;padding:14px;border:1px solid #d9e5f1;border-radius:14px;background:#f8fbff}
+.donation-box div{display:grid;gap:4px}.donation-box span{font-size:.78rem;color:#64748b;text-transform:uppercase;letter-spacing:.04em}.donation-box strong{font-size:1.05rem;color:#0c2b4a}
+.progress-summary{display:flex;align-items:center;gap:16px;padding:14px 16px;margin-bottom:18px;border-radius:14px;background:#f4f8fc}.progress-summary strong{font-size:1.8rem;color:#0f5f99}.progress-summary span{font-weight:700;color:#334155}
+@media(max-width:720px){.memory-current{align-items:flex-start;flex-direction:column}.donation-box{grid-template-columns:1fr}}
