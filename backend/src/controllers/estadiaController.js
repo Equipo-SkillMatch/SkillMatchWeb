@@ -626,37 +626,18 @@ exports.subirMemoriaFinal = async (req,res) => {
     if(!rows.length)return res.status(400).json({ok:false,mensaje:'No tienes estadía registrada.'});
     const e=rows[0];
     if(!e.memoria_final_habilitada)return res.status(400).json({ok:false,mensaje:'Tu profesor todavía no ha marcado la memoria como terminada.'});
-  const nuevaVersion = Number(e.memoria_final_version || 0) + 1;
-    const normal = s =>
-  String(s || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^A-Za-z0-9]/g, '');
-
-const nombreEsperado =
-  `${normal(e.grupo)}_${normal(`${e.nombre}${e.apellido}`)}.pdf`;
-
-const normalizarArchivo = nombre => {
-  const ultimoPunto = nombre.lastIndexOf('.');
-  const base = ultimoPunto >= 0 ? nombre.substring(0, ultimoPunto) : nombre;
-  const extension = ultimoPunto >= 0 ? nombre.substring(ultimoPunto) : '';
-
-  return base
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^A-Za-z0-9_]/g, '')
-    .toLowerCase() + extension.toLowerCase();
-};
-
-const esperado = normalizarArchivo(nombreEsperado);
-const recibido = normalizarArchivo(req.file.originalname);
-
-if (recibido !== esperado) {
-  return res.status(400).json({
-    ok: false,
-    mensaje: `El archivo debe llamarse ${nombreEsperado}`
-  });
-}
+    const normal=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]/g,'');
+    const nombreEsperado=`${normal(e.grupo)}_${normal(`${e.nombre}${e.apellido}`)}.pdf`;
+    const normalizarArchivo=nombre=>{
+      const ultimoPunto=String(nombre||'').lastIndexOf('.');
+      const base=ultimoPunto>=0?String(nombre).substring(0,ultimoPunto):String(nombre||'');
+      const extension=ultimoPunto>=0?String(nombre).substring(ultimoPunto):'';
+      return base.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9_]/g,'').toLowerCase()+extension.toLowerCase();
+    };
+    const esperado=normalizarArchivo(nombreEsperado);
+    const recibido=normalizarArchivo(req.file.originalname);
+    if(recibido!==esperado)return res.status(400).json({ok:false,mensaje:`El archivo debe llamarse ${nombreEsperado}`});
+    const nuevaVersion=Number(e.memoria_final_version||0)+1;
     const ruta=filePath(req.file);
     await db.query(`UPDATE estadias SET memoria_final_ruta=?,memoria_final_nombre=?,memoria_final_mime=?,
       memoria_final_subida_en=CURRENT_TIMESTAMP,memoria_final_version=? WHERE id_estadia=?`,
@@ -684,7 +665,7 @@ if (recibido !== esperado) {
 
 exports.autorizarMemoriaFinal = async (req,res) => {
   if(!requireRoles(req,res,[4])) return;
-  try{const [rows]=await db.query('SELECT id_estadia FROM estadias WHERE id_estadia=? AND id_profesor=?',[req.params.idEstadia,req.usuario.id_usuario]);if(!rows.length)return res.status(403).json({ok:false,mensaje:'No puedes habilitar esta memoria.'});await db.query('UPDATE estadias SET memoria_final_habilitada=TRUE,memoria_final_autorizada_por=?,memoria_final_autorizada_en=CURRENT_TIMESTAMP WHERE id_estadia=?',[req.usuario.id_usuario,req.params.idEstadia]);res.json({ok:true});}
+  try{const [rows]=await db.query('SELECT id_estadia FROM estadias WHERE id_estadia=? AND id_profesor=?',[req.params.idEstadia,req.usuario.id_usuario]);if(!rows.length)return res.status(403).json({ok:false,mensaje:'No puedes habilitar esta memoria.'});await db.query('UPDATE estadias SET memoria_final_habilitada=TRUE,memoria_final_autorizada=TRUE,memoria_final_autorizada_por=?,memoria_final_autorizada_en=CURRENT_TIMESTAMP WHERE id_estadia=?',[req.usuario.id_usuario,req.params.idEstadia]);res.json({ok:true});}
   catch(e){res.status(500).json({ok:false,mensaje:'No se pudo habilitar la entrega final.'});}
 };
 
@@ -999,6 +980,76 @@ exports.detalleEvaluacionEntrega = async (req,res) => {
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar la evaluación.'});}
 };
 
+
+exports.alumnosAvancesProfesor = async (req,res) => {
+  if(!requireRoles(req,res,[4])) return;
+  try{
+    const [rows]=await db.query(`
+      SELECT es.id_estadia,es.id_estudiante,u.nombre,u.apellido,e.matricula,g.nombre grupo_nombre,
+             es.proyecto_titulo,es.empresa_razon_social,
+             COUNT(DISTINCT fa.id_fecha_avance) talleres_habilitados,
+             COUNT(DISTINCT ea.id_entrega) entregas_registradas,
+             COALESCE(
+               jsonb_agg(
+                 DISTINCT jsonb_build_object(
+                   'id_fecha_avance',fa.id_fecha_avance,
+                   'numero_avance',fa.numero_avance,
+                   'titulo',fa.titulo,
+                   'fecha_apertura',fa.fecha_apertura,
+                   'fecha_limite',fa.fecha_limite
+                 )
+               ) FILTER (WHERE fa.id_fecha_avance IS NOT NULL),
+               '[]'::jsonb
+             ) talleres
+      FROM estadias es
+      JOIN estudiantes e ON e.id_estudiante=es.id_estudiante
+      JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      JOIN grupos_estadia g ON g.id_grupo=es.id_grupo
+      LEFT JOIN fechas_avances_estadia fa ON fa.id_grupo=es.id_grupo
+      LEFT JOIN entregas_avances_estadia ea ON ea.id_estadia=es.id_estadia AND ea.id_fecha_avance=fa.id_fecha_avance
+      WHERE es.id_profesor=?
+      GROUP BY es.id_estadia,es.id_estudiante,u.nombre,u.apellido,e.matricula,g.nombre,es.proyecto_titulo,es.empresa_razon_social
+      ORDER BY u.apellido,u.nombre
+    `,[req.usuario.id_usuario]);
+    for(const r of rows){
+      r.talleres=(Array.isArray(r.talleres)?r.talleres:[]).sort((a,b)=>Number(a.numero_avance||0)-Number(b.numero_avance||0));
+    }
+    res.json({ok:true,alumnos:rows});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo cargar el seguimiento de avances por alumno.'});}
+};
+
+exports.resumenEmpresaProfesor = async (req,res) => {
+  if(!requireRoles(req,res,[4])) return;
+  try{
+    const [rows]=await db.query(`
+      SELECT es.id_estadia,es.id_estudiante,u.nombre,u.apellido,e.matricula,g.nombre grupo_nombre,
+             es.empresa_razon_social,es.proyecto_titulo,es.responsable_correo,
+             es.memoria_final_ruta,COALESCE(es.memoria_final_version,0) memoria_final_version,
+             MAX(CASE WHEN ee.momento='inicial' THEN ee.id_evaluacion_empresa END) eval_inicial_id,
+             MAX(CASE WHEN ee.momento='inicial' THEN ee.respondida_en END) eval_inicial_respondida,
+             MAX(CASE WHEN ee.momento='inicial' THEN ee.promedio END) eval_inicial_promedio,
+             MAX(CASE WHEN ee.momento='inicial' THEN ee.codigo_final END) eval_inicial_codigo,
+             MAX(CASE WHEN ee.momento='final' THEN ee.id_evaluacion_empresa END) eval_final_id,
+             MAX(CASE WHEN ee.momento='final' THEN ee.respondida_en END) eval_final_respondida,
+             MAX(CASE WHEN ee.momento='final' THEN ee.promedio END) eval_final_promedio,
+             MAX(CASE WHEN ee.momento='final' THEN ee.codigo_final END) eval_final_codigo,
+             MAX(v.id_validacion) FILTER (WHERE v.area='empresa_memoria') memoria_validacion_id,
+             MAX(v.estado) FILTER (WHERE v.area='empresa_memoria') memoria_estado,
+             MAX(v.calificacion_memoria_empresa) FILTER (WHERE v.area='empresa_memoria') memoria_calificacion
+      FROM estadias es
+      JOIN estudiantes e ON e.id_estudiante=es.id_estudiante
+      JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      JOIN grupos_estadia g ON g.id_grupo=es.id_grupo
+      LEFT JOIN evaluaciones_empresa_estadia ee ON ee.id_estadia=es.id_estadia
+      LEFT JOIN validaciones_cierre_estadia v ON v.id_estadia=es.id_estadia
+      WHERE es.id_profesor=?
+      GROUP BY es.id_estadia,es.id_estudiante,u.nombre,u.apellido,e.matricula,g.nombre
+      ORDER BY u.apellido,u.nombre
+    `,[req.usuario.id_usuario]);
+    res.json({ok:true,alumnos:rows});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo cargar la bandeja de evaluación de empresa.'});}
+};
+
 exports.generarEvaluacionEmpresa = async (req,res) => {
   if(!requireRoles(req,res,[4])) return;
   const idEstadia=Number(req.params.idEstadia), momento=String(req.body.momento||'').toLowerCase();
@@ -1010,7 +1061,7 @@ exports.generarEvaluacionEmpresa = async (req,res) => {
     const [r]=await db.query(`INSERT INTO evaluaciones_empresa_estadia(id_estadia,momento,token_publico,generada_por,vence_en)
       VALUES(?,?,?,?,CURRENT_TIMESTAMP + INTERVAL '30 days')
       ON CONFLICT(id_estadia,momento) DO UPDATE SET token_publico=EXCLUDED.token_publico,generada_por=EXCLUDED.generada_por,
-      generada_en=CURRENT_TIMESTAMP,vence_en=EXCLUDED.vence_en,respondida_en=NULL,promedio=NULL,codigo_final=NULL,observaciones=NULL
+      generada_en=CURRENT_TIMESTAMP,vence_en=EXCLUDED.vence_en
       RETURNING id_evaluacion_empresa`,[idEstadia,momento,token,req.usuario.id_usuario]);
     const base=process.env.FRONTEND_ORIGIN||'http://localhost:3000';
     res.json({ok:true,id_evaluacion_empresa:r.rows?.[0]?.id_evaluacion_empresa||r.insertId,enlace:`${base.replace(/\/$/,'')}/evaluacion-empresa/${token}`,correo_sugerido:own[0].responsable_correo||null});

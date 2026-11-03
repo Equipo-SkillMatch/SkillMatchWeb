@@ -1,0 +1,14 @@
+SKILLMATCH V8.3
+
+1. Reemplaza los archivos de la V8.3 en tu proyecto.
+2. Ejecuta en psql:
+   \i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/20_estadias_v8_3_ux_y_flujo.sql'
+3. Verifica sintaxis backend:
+   node --check backend/src/controllers/estadiaController.js
+   node --check backend/src/routes/estadiaRoutes.js
+   node --check backend/src/app.js
+4. Sube a main:
+   git add .
+   git commit -m "version 8.3 mejoras flujo cierre y profesor"
+   git push origin main
+5. Prueba alumno, profesor, idiomas, servicios escolares y empresa.

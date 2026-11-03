@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '8.2.0-memoria-final-flujo-simple';
+const APP_VERSION = '8.3.0-ux-cierre-profesor-empresa';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);

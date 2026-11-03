@@ -43,45 +43,26 @@ const envOrigins = (process.env.FRONTEND_ORIGINS || '')
 
 const allowedOrigins = new Set([
   process.env.FRONTEND_ORIGIN || 'http://localhost:3000',
-
   'http://localhost:3000',
   'http://localhost:3001',
-
   'https://skill-match-web.vercel.app',
-
   ...envOrigins,
 ]);
 
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) {
-      return callback(null, true);
+      callback(null, true);
+      return;
     }
 
     if (allowedOrigins.has(origin)) {
-      return callback(null, true);
+      callback(null, true);
+      return;
     }
 
-    console.error('CORS bloqueado:', origin);
-
-    return callback(
-      new Error(`Origin no permitido por CORS: ${origin}`)
-    );
+    callback(new Error(`Origin no permitido por CORS: ${origin}`));
   },
-
-  methods: [
-    'GET',
-    'POST',
-    'PUT',
-    'PATCH',
-    'DELETE',
-    'OPTIONS'
-  ],
-
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization'
-  ]
 }));
 app.use(express.json());
 

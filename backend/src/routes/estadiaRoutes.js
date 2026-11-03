@@ -74,6 +74,8 @@ router.get('/profesor/entregas/:id/evaluacion', controller.detalleEvaluacionEntr
 router.post('/profesor/entregas/:id/evaluacion-criterios', controller.evaluarEntregaPorCriterios);
 router.post('/profesor/estadias/:idEstadia/evaluacion-empresa', controller.generarEvaluacionEmpresa);
 router.get('/profesor/evaluaciones-empresa', controller.evaluacionesEmpresaProfesor);
+router.get('/profesor/alumnos-avances', controller.alumnosAvancesProfesor);
+router.get('/profesor/empresa-resumen', controller.resumenEmpresaProfesor);
 router.get('/evaluaciones-empresa/:id', controller.detalleEvaluacionEmpresa);
 router.get('/empresa/practicantes', controller.practicantesEmpresa);
 router.post('/empresa/evaluaciones/:id/responder', controller.responderEvaluacionEmpresaCuenta);
