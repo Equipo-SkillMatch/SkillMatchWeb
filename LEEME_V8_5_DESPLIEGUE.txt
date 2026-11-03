@@ -1,0 +1,45 @@
+SKILLMATCH V8.5 — DESPLIEGUE
+============================
+
+REQUISITO
+- Esta versión parte de V8.4.
+- La migración 21 de V8.4 debe estar aplicada.
+- V8.5 NO requiere una nueva migración SQL.
+
+ARCHIVOS PRINCIPALES MODIFICADOS
+- backend/src/controllers/estadiaController.js
+- frontend/src/pages/ModuloEstadias.jsx
+- frontend/src/components/CierreEstadiaPanel.jsx
+- frontend/src/CSS/ModuloEstadias.css
+
+VALIDACIONES REALIZADAS
+- node --check backend/src/controllers/estadiaController.js
+- tsc --allowJs --checkJs false --jsx react-jsx --noEmit --noResolve para los JSX modificados
+
+DESPLIEGUE
+1. Sustituir los archivos V8.5.
+2. Verificar:
+   node --check backend/src/controllers/estadiaController.js
+3. Subir:
+   git add .
+   git commit -m "version 8.5 cierre final ciclo estadias"
+   git push origin main
+4. Esperar despliegues Render y Vercel.
+
+PRUEBA FINAL
+A) Administrador
+- Crear/editar periodo.
+- Definir Inicio de estadía y Fin de estadía.
+
+B) Profesor
+- Completar la toma de protesta de un alumno.
+- Confirmar que desaparece de la bandeja activa.
+- Confirmar que aparece en Estadías terminadas.
+- Filtrar por grupo.
+- Descargar el acta final.
+
+C) Alumno
+- Iniciar sesión después de que la toma quede aprobada.
+- Confirmar que solo aparece Estadía terminada.
+- Confirmar mensaje de felicitación.
+- Imprimir/descargar acta final.

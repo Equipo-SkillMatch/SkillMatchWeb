@@ -107,7 +107,8 @@ exports.listarPeriodos = async (_req, res) => {
 exports.crearPeriodo = async (req, res) => {
   if (!requireRoles(req, res, [1])) return;
   const { nombre, clave, fecha_inicio, fecha_fin, fecha_limite_registro_empresa, fecha_limite_seguro, instrucciones, monto_donativo } = req.body;
-  if (!nombre || !clave || !fecha_inicio || !fecha_fin) return res.status(400).json({ ok:false, mensaje:'Nombre, clave y fechas son obligatorios.' });
+  if (!nombre || !clave || !fecha_inicio || !fecha_fin) return res.status(400).json({ ok:false, mensaje:'Nombre, clave, inicio y fin de estadía son obligatorios.' });
+  if (new Date(fecha_fin) < new Date(fecha_inicio)) return res.status(400).json({ok:false,mensaje:'La fecha de fin de estadía no puede ser anterior a la fecha de inicio.'});
   try {
     const [result] = await db.query(`INSERT INTO periodos_estadia
       (nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,monto_donativo,creado_por)
@@ -455,6 +456,7 @@ async function configCalificaciones() {
 exports.actualizarPeriodo = async (req,res) => {
   if(!requireRoles(req,res,[1])) return;
   const {nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,monto_donativo,activo}=req.body;
+  if(fecha_inicio && fecha_fin && new Date(fecha_fin) < new Date(fecha_inicio)) return res.status(400).json({ok:false,mensaje:'La fecha de fin de estadía no puede ser anterior a la fecha de inicio.'});
   try{
     await db.query(`UPDATE periodos_estadia SET nombre=COALESCE(?,nombre),clave=COALESCE(?,clave),fecha_inicio=COALESCE(?,fecha_inicio),fecha_fin=COALESCE(?,fecha_fin),fecha_limite_registro_empresa=?,fecha_limite_seguro=?,instrucciones=?,monto_donativo=COALESCE(?,monto_donativo),activo=COALESCE(?,activo) WHERE id_periodo=?`,
       [nombre||null,clave||null,fecha_inicio||null,fecha_fin||null,fecha_limite_registro_empresa||null,fecha_limite_seguro||null,instrucciones||null,monto_donativo===undefined?null:Number(monto_donativo||0),activo===undefined?null:Boolean(activo),req.params.id]);
@@ -1246,7 +1248,7 @@ exports.actualizarInicioFormal = async (req,res) => {
 const AREA_BY_ROLE_V8 = { 6:'servicios_escolares', 7:'biblioteca', 8:'laboratorios', 9:'centro_idiomas' };
 
 async function cierrePrerequisitos(idEstadia){
-  const [base]=await db.query(`SELECT e.id_estadia,e.id_estudiante,e.id_profesor,e.id_empresa,e.memoria_final_ruta,e.memoria_final_nombre,
+  const [base]=await db.query(`SELECT e.id_estadia,e.id_estudiante,e.id_profesor,e.id_empresa,e.estado AS estado_estadia,e.memoria_final_ruta,e.memoria_final_nombre,
     COALESCE(e.memoria_final_version,0) memoria_final_version,e.memoria_final_subida_en,e.memoria_final_autorizada,e.hoja_previa_toma_generada_en,p.monto_donativo,
     s.estado seguro_estado,COALESCE(i.autorizado,FALSE) inicio_autorizado
     FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
