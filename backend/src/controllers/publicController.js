@@ -2,7 +2,7 @@ const Proyecto = require('../models/Proyecto');
 const db = require('../config/db');
 const { isSameAsset } = require('../utils/fileUrl');
 
-const APP_VERSION = '8.3.0-ux-cierre-profesor-empresa';
+const APP_VERSION = '8.4.0-toma-protesta-3-evaluadores';
 
 function inferMimeType(item = {}) {
   if (item.mime_type) return String(item.mime_type);
@@ -286,4 +286,83 @@ exports.responderAprobacionMemoriaEmpresa = async (req,res) => {
       [estado,req.body.observaciones||null,estado==='aprobado'?calificacion:null,rows[0].id_validacion]);
     res.json({ok:true});
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo registrar la aprobación.'});}
+};
+
+// V8.4 - Evaluacion publica de toma de protesta mediante enlace individual por profesor.
+exports.obtenerTomaProtestaPublica = async (req,res) => {
+  try{
+    const token=String(req.params.token||'');
+    const [rows]=await db.query(`SELECT te.id_toma,te.id_profesor,te.orden,t.fecha_hora,t.lugar,t.estado,
+      e.proyecto_titulo,e.empresa_razon_social,es.matricula,u.nombre,u.apellido,g.nombre grupo_nombre,p.nombre periodo_nombre,
+      CONCAT(up.nombre,' ',up.apellido) evaluador_nombre,
+      ev.calificacion promedio,ev.decision,ev.observaciones,ev.evaluado_en
+      FROM toma_protesta_evaluadores te
+      JOIN tomas_protesta t ON t.id_toma=te.id_toma
+      JOIN estadias e ON e.id_estadia=t.id_estadia
+      JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
+      JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      JOIN grupos_estadia g ON g.id_grupo=e.id_grupo
+      JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
+      JOIN usuarios up ON up.id_usuario=te.id_profesor
+      LEFT JOIN evaluaciones_toma_protesta ev ON ev.id_toma=te.id_toma AND ev.id_profesor=te.id_profesor
+      WHERE te.token_publico=? LIMIT 1`,[token]);
+    if(!rows.length)return res.status(404).json({ok:false,mensaje:'Enlace de toma de protesta no valido.'});
+    const item=rows[0];
+    const habilitada=new Date(item.fecha_hora)<=new Date();
+    const [preguntas]=await db.query('SELECT id_pregunta,pregunta,orden FROM preguntas_toma_protesta WHERE activa=TRUE ORDER BY orden');
+    let respuestas=[];
+    if(item.evaluado_en){
+      [respuestas]=await db.query('SELECT id_pregunta,calificacion FROM respuestas_toma_protesta WHERE id_toma=? AND id_profesor=? ORDER BY id_pregunta',[item.id_toma,item.id_profesor]);
+    }
+    res.json({ok:true,toma:item,preguntas,respuestas,habilitada});
+  }catch(e){console.error('Error obtenerTomaProtestaPublica:',e);res.status(500).json({ok:false,mensaje:'No se pudo cargar la toma de protesta.'});}
+};
+
+exports.responderTomaProtestaPublica = async (req,res) => {
+  const token=String(req.params.token||'');
+  const respuestas=Array.isArray(req.body.respuestas)?req.body.respuestas:[];
+  const decision=String(req.body.decision||'');
+  if(respuestas.length!==5)return res.status(400).json({ok:false,mensaje:'Debes calificar las 5 preguntas.'});
+  if(!['aprobado','rechazado'].includes(decision))return res.status(400).json({ok:false,mensaje:'Selecciona aprobar o rechazar la toma de protesta.'});
+  const conn=await db.getConnection();
+  try{
+    const [asig]=await conn.query(`SELECT te.id_toma,te.id_profesor,t.fecha_hora,t.id_estadia
+      FROM toma_protesta_evaluadores te JOIN tomas_protesta t ON t.id_toma=te.id_toma WHERE te.token_publico=? LIMIT 1`,[token]);
+    if(!asig.length)return res.status(404).json({ok:false,mensaje:'Enlace de toma de protesta no valido.'});
+    if(new Date(asig[0].fecha_hora)>new Date())return res.status(400).json({ok:false,mensaje:'La evaluacion se habilita al llegar la fecha y hora programadas.'});
+    await conn.beginTransaction();
+    let suma=0;
+    for(const r of respuestas){
+      const cal=Number(r.calificacion);
+      if(!Number.isFinite(cal)||cal<0||cal>10)throw new Error('Cada calificacion debe estar entre 0 y 10.');
+      const [q]=await conn.query('SELECT id_pregunta FROM preguntas_toma_protesta WHERE id_pregunta=? AND activa=TRUE',[r.id_pregunta]);
+      if(!q.length)throw new Error('Pregunta invalida.');
+      suma+=cal;
+      await conn.query(`INSERT INTO respuestas_toma_protesta(id_toma,id_profesor,id_pregunta,calificacion)
+        VALUES(?,?,?,?) ON CONFLICT(id_toma,id_profesor,id_pregunta) DO UPDATE SET calificacion=EXCLUDED.calificacion,creado_en=CURRENT_TIMESTAMP`,
+        [asig[0].id_toma,asig[0].id_profesor,r.id_pregunta,cal]);
+    }
+    const promedio=Math.round((suma/5)*100)/100;
+    const [nivel]=await conn.query('SELECT codigo FROM niveles_evaluacion_estadia WHERE activo=TRUE ORDER BY ABS(valor-?) ASC,orden DESC LIMIT 1',[promedio]);
+    await conn.query(`INSERT INTO evaluaciones_toma_protesta(id_toma,id_profesor,codigo_nivel,calificacion,observaciones,decision)
+      VALUES(?,?,?,?,?,?) ON CONFLICT(id_toma,id_profesor) DO UPDATE SET codigo_nivel=EXCLUDED.codigo_nivel,calificacion=EXCLUDED.calificacion,observaciones=EXCLUDED.observaciones,decision=EXCLUDED.decision,evaluado_en=CURRENT_TIMESTAMP`,
+      [asig[0].id_toma,asig[0].id_profesor,nivel[0]?.codigo||'NA',promedio,req.body.observaciones||null,decision]);
+
+    const [evs]=await conn.query('SELECT id_profesor,calificacion,decision FROM evaluaciones_toma_protesta WHERE id_toma=?',[asig[0].id_toma]);
+    if(evs.length>=3){
+      const aprobado=evs.every(e=>e.decision==='aprobado');
+      if(aprobado){
+        await conn.query("UPDATE tomas_protesta SET estado='aprobada',finalizada_en=CURRENT_TIMESTAMP WHERE id_toma=?",[asig[0].id_toma]);
+        await conn.query("UPDATE estadias SET estado='terminada',toma_protesta_aprobada=TRUE,cierre_completado_en=CURRENT_TIMESTAMP,actualizada_en=CURRENT_TIMESTAMP WHERE id_estadia=?",[asig[0].id_estadia]);
+        await conn.query("UPDATE expedientes_estadia SET estado='cerrado',porcentaje_completo=100,actualizado_en=CURRENT_TIMESTAMP WHERE id_estadia=?",[asig[0].id_estadia]);
+      }else{
+        await conn.query("UPDATE tomas_protesta SET estado='requiere_revision' WHERE id_toma=?",[asig[0].id_toma]);
+      }
+    }else{
+      await conn.query("UPDATE tomas_protesta SET estado='en_evaluacion' WHERE id_toma=?",[asig[0].id_toma]);
+    }
+    await conn.commit();
+    res.json({ok:true,promedio,decision,mensaje:'Evaluacion registrada correctamente.'});
+  }catch(e){try{await conn.rollback();}catch{};console.error('Error responderTomaProtestaPublica:',e);res.status(500).json({ok:false,mensaje:e.message||'No se pudo guardar la evaluacion.'});}
+  finally{conn.release();}
 };

@@ -96,8 +96,11 @@ router.post('/profesor/estadias/:idEstadia/enlace-memoria-empresa', controller.g
 router.get('/empresa/memorias-cierre', controller.memoriasCierreEmpresa);
 router.put('/empresa/memorias-cierre/:id', controller.resolverMemoriaEmpresaCuenta);
 router.get('/profesor/estadias/:idEstadia/evaluadores', controller.profesoresEvaluadoresToma);
+router.get('/profesor/estadias/:idEstadia/documento-cierre', controller.datosDocumentoCierre);
+router.post('/profesor/estadias/:idEstadia/hoja-previa-generada', controller.marcarHojaPreviaGenerada);
 router.post('/profesor/estadias/:idEstadia/toma-protesta', controller.programarTomaProtesta);
 router.get('/profesor/tomas-protesta', controller.tomasProtestaProfesor);
+router.get('/profesor/tomas-protesta/:idToma/enlaces', controller.enlacesTomaProtesta);
 router.get('/profesor/cierres', controller.cierresProfesor);
 router.post('/profesor/tomas-protesta/:idToma/evaluacion', controller.evaluarTomaProtesta);
 router.get('/cierre/overview', controller.cierreOverviewAdmin);

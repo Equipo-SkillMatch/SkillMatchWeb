@@ -13,6 +13,7 @@ import Privacidad from './pages/Privacidad';
 import ModuloEstadias from './pages/ModuloEstadias';
 import EvaluacionEmpresaPublica from './pages/EvaluacionEmpresaPublica';
 import AprobacionMemoriaEmpresa from './pages/AprobacionMemoriaEmpresa';
+import TomaProtestaPublica from './pages/TomaProtestaPublica';
 
 import RutaProtegida from './components/RutaProtegida';
 import './CSS/DashboardTheme.css';
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/privacidad" element={<Privacidad />} />
         <Route path="/evaluacion-empresa/:token" element={<EvaluacionEmpresaPublica />} />
         <Route path="/aprobacion-memoria/:token" element={<AprobacionMemoriaEmpresa />} />
+        <Route path="/toma-protesta/:token" element={<TomaProtestaPublica />} />
 
  {/* RUTAS PROTEGIDAS POR TOKEN Y ROL */}
         

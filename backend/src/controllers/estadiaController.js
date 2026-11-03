@@ -1247,7 +1247,7 @@ const AREA_BY_ROLE_V8 = { 6:'servicios_escolares', 7:'biblioteca', 8:'laboratori
 
 async function cierrePrerequisitos(idEstadia){
   const [base]=await db.query(`SELECT e.id_estadia,e.id_estudiante,e.id_profesor,e.id_empresa,e.memoria_final_ruta,e.memoria_final_nombre,
-    COALESCE(e.memoria_final_version,0) memoria_final_version,e.memoria_final_subida_en,e.memoria_final_autorizada,p.monto_donativo,
+    COALESCE(e.memoria_final_version,0) memoria_final_version,e.memoria_final_subida_en,e.memoria_final_autorizada,e.hoja_previa_toma_generada_en,p.monto_donativo,
     s.estado seguro_estado,COALESCE(i.autorizado,FALSE) inicio_autorizado
     FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
     LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia
@@ -1302,7 +1302,7 @@ exports.miCierreEstadia = async (req,res) => {
     let evaluadores=[];
     if(toma.length){
       [evaluadores]=await db.query(`SELECT te.orden,te.id_profesor,CONCAT(u.nombre,' ',u.apellido) nombre,
-        ev.codigo_nivel,ev.calificacion,ev.observaciones,ev.evaluado_en
+        ev.codigo_nivel,ev.calificacion,ev.decision,ev.observaciones,ev.evaluado_en
         FROM toma_protesta_evaluadores te JOIN usuarios u ON u.id_usuario=te.id_profesor
         LEFT JOIN evaluaciones_toma_protesta ev ON ev.id_toma=te.id_toma AND ev.id_profesor=te.id_profesor
         WHERE te.id_toma=? ORDER BY te.orden`,[toma[0].id_toma]);
@@ -1470,37 +1470,161 @@ exports.profesoresEvaluadoresToma = async (req,res) => {
   if(!requireRoles(req,res,[4])) return;
   try{
     const id=Number(req.params.idEstadia);
-    const [own]=await db.query(`SELECT e.id_profesor,g.id_carrera FROM estadias e JOIN grupos_estadia g ON g.id_grupo=e.id_grupo WHERE e.id_estadia=? AND e.id_profesor=?`,[id,req.usuario.id_usuario]);
+    const [own]=await db.query(`SELECT e.id_profesor,g.id_carrera,g.carrera AS carrera_texto
+      FROM estadias e JOIN grupos_estadia g ON g.id_grupo=e.id_grupo
+      WHERE e.id_estadia=? AND e.id_profesor=? LIMIT 1`,[id,req.usuario.id_usuario]);
     if(!own.length)return res.status(403).json({ok:false,mensaje:'Esta estadía no está asignada a tu cuenta.'});
-    const [rows]=await db.query(`SELECT p.id_profesor,u.nombre,u.apellido,u.correo,p.departamento,c.nombre carrera
-      FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor LEFT JOIN carreras c ON c.id_carrera=p.id_carrera
-      WHERE u.estado='activo' AND p.id_profesor<>? AND (? IS NULL OR p.id_carrera=?) ORDER BY u.apellido,u.nombre`,
-      [req.usuario.id_usuario,own[0].id_carrera,own[0].id_carrera]);
+
+    // Evita el patrón "? IS NULL" con PostgreSQL, que puede provocar
+    // "could not determine data type of parameter" y terminar en HTTP 500.
+    let rows=[];
+    if(own[0].id_carrera){
+      [rows]=await db.query(`SELECT p.id_profesor,u.nombre,u.apellido,u.correo,p.departamento,p.id_carrera,c.nombre carrera
+        FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor
+        LEFT JOIN carreras c ON c.id_carrera=p.id_carrera
+        WHERE u.estado='activo' AND p.id_profesor<>? AND p.id_carrera=?
+        ORDER BY u.apellido,u.nombre`,[req.usuario.id_usuario,own[0].id_carrera]);
+    }else{
+      const texto=String(own[0].carrera_texto||'').trim();
+      if(texto){
+        [rows]=await db.query(`SELECT p.id_profesor,u.nombre,u.apellido,u.correo,p.departamento,p.id_carrera,c.nombre carrera
+          FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor
+          LEFT JOIN carreras c ON c.id_carrera=p.id_carrera
+          WHERE u.estado='activo' AND p.id_profesor<>?
+            AND (COALESCE(c.nombre,p.departamento,'') ILIKE '%' || ? || '%'
+                 OR ? ILIKE '%' || COALESCE(c.nombre,p.departamento,'') || '%')
+          ORDER BY u.apellido,u.nombre`,[req.usuario.id_usuario,texto,texto]);
+      }
+    }
+
+    // Si los registros históricos no tienen carrera normalizada, no bloqueamos la toma:
+    // mostramos profesores activos (excepto el asesor) y dejamos la decisión al asesor.
+    if(!rows.length){
+      [rows]=await db.query(`SELECT p.id_profesor,u.nombre,u.apellido,u.correo,p.departamento,p.id_carrera,c.nombre carrera
+        FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor
+        LEFT JOIN carreras c ON c.id_carrera=p.id_carrera
+        WHERE u.estado='activo' AND p.id_profesor<>?
+        ORDER BY u.apellido,u.nombre`,[req.usuario.id_usuario]);
+    }
     res.json({ok:true,profesores:rows});
-  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los profesores evaluadores.'});}
+  }catch(e){console.error('Error profesoresEvaluadoresToma:',e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los profesores evaluadores.'});}
+};
+
+
+exports.datosDocumentoCierre = async (req,res) => {
+  if(!requireRoles(req,res,[2,4])) return;
+  try{
+    const id=Number(req.params.idEstadia||req.query.id_estadia||0);
+    const [base]=await db.query(`SELECT e.id_estadia,e.id_estudiante,e.id_profesor,e.proyecto_titulo,e.empresa_razon_social,e.responsable_nombre,
+      e.hoja_previa_toma_generada_en,e.estado AS estado_estadia,e.cierre_completado_en,
+      es.matricula,u.nombre,u.apellido,g.nombre grupo_nombre,g.carrera,p.nombre periodo_nombre,p.fecha_inicio,p.fecha_fin,
+      CONCAT(up.nombre,' ',up.apellido) tutor_nombre,up.correo tutor_correo
+      FROM estadias e JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
+      JOIN usuarios up ON up.id_usuario=e.id_profesor WHERE e.id_estadia=? LIMIT 1`,[id]);
+    if(!base.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
+    const x=base[0];
+    if(role(req)===2 && Number(x.id_estudiante)!==Number(req.usuario.id_usuario))return res.status(403).json({ok:false,mensaje:'Sin permiso.'});
+    if(role(req)===4 && Number(x.id_profesor)!==Number(req.usuario.id_usuario)){
+      const [jurado]=await db.query(`SELECT 1 FROM tomas_protesta t JOIN toma_protesta_evaluadores te ON te.id_toma=t.id_toma WHERE t.id_estadia=? AND te.id_profesor=?`,[id,req.usuario.id_usuario]);
+      if(!jurado.length)return res.status(403).json({ok:false,mensaje:'Sin permiso.'});
+    }
+
+    const [talleres]=await db.query(`SELECT numero_avance,calificacion FROM (
+      SELECT DISTINCT ON (fa.numero_avance) fa.numero_avance,r.calificacion
+      FROM entregas_avances_estadia ea
+      JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance
+      JOIN revisiones_avances_estadia r ON r.id_entrega=ea.id_entrega
+      WHERE ea.id_estadia=?
+      ORDER BY fa.numero_avance,r.revisado_en DESC
+    ) x ORDER BY numero_avance`,[id]);
+    const califsT=talleres.map(t=>Number(t.calificacion)).filter(n=>Number.isFinite(n));
+    const promedioProfesor=califsT.length?Math.round((califsT.reduce((a,b)=>a+b,0)/califsT.length)*100)/100:null;
+
+    const [empresa]=await db.query(`SELECT momento,promedio,codigo_final,evaluador_nombre,evaluador_cargo,respondida_en
+      FROM evaluaciones_empresa_estadia WHERE id_estadia=? AND respondida_en IS NOT NULL ORDER BY CASE momento WHEN 'final' THEN 1 ELSE 2 END LIMIT 1`,[id]);
+    const [memEmp]=await db.query(`SELECT calificacion_memoria_empresa,observaciones FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='empresa_memoria' LIMIT 1`,[id]);
+    const [toma]=await db.query(`SELECT * FROM tomas_protesta WHERE id_estadia=? LIMIT 1`,[id]);
+    let evaluadores=[];
+    if(toma.length){
+      [evaluadores]=await db.query(`SELECT te.orden,te.id_profesor,CONCAT(u.nombre,' ',u.apellido) nombre,
+        ev.calificacion,ev.decision,ev.observaciones,ev.evaluado_en
+        FROM toma_protesta_evaluadores te JOIN usuarios u ON u.id_usuario=te.id_profesor
+        LEFT JOIN evaluaciones_toma_protesta ev ON ev.id_toma=te.id_toma AND ev.id_profesor=te.id_profesor
+        WHERE te.id_toma=? ORDER BY te.orden`,[toma[0].id_toma]);
+    }
+    res.json({ok:true,documento:{...x,promedio_profesor:promedioProfesor,evaluacion_empresa:empresa[0]||null,memoria_empresa:memEmp[0]||null,toma:toma[0]||null,evaluadores}});
+  }catch(e){console.error('Error datosDocumentoCierre:',e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los datos del documento de cierre.'});}
+};
+
+exports.marcarHojaPreviaGenerada = async (req,res) => {
+  if(!requireRoles(req,res,[4])) return;
+  try{
+    const id=Number(req.params.idEstadia);
+    const [own]=await db.query('SELECT id_estadia FROM estadias WHERE id_estadia=? AND id_profesor=?',[id,req.usuario.id_usuario]);
+    if(!own.length)return res.status(403).json({ok:false,mensaje:'Esta estadía no está asignada a tu cuenta.'});
+    if(!(await cierreFinalAprobado(id)))return res.status(400).json({ok:false,mensaje:'Primero deben estar aprobadas todas las validaciones del cierre.'});
+    await db.query(`UPDATE estadias SET hoja_previa_toma_generada_en=CURRENT_TIMESTAMP,hoja_previa_toma_generada_por=? WHERE id_estadia=?`,[req.usuario.id_usuario,id]);
+    res.json({ok:true,mensaje:'Hoja previa registrada. Ya puedes programar la toma de protesta.'});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo registrar la hoja previa.'});}
+};
+
+exports.enlacesTomaProtesta = async (req,res) => {
+  if(!requireRoles(req,res,[4])) return;
+  try{
+    const idToma=Number(req.params.idToma);
+    const [t]=await db.query(`SELECT t.id_toma,t.fecha_hora,t.creada_por,e.id_profesor FROM tomas_protesta t JOIN estadias e ON e.id_estadia=t.id_estadia WHERE t.id_toma=? LIMIT 1`,[idToma]);
+    if(!t.length)return res.status(404).json({ok:false,mensaje:'Toma de protesta no encontrada.'});
+    if(Number(t[0].id_profesor)!==Number(req.usuario.id_usuario))return res.status(403).json({ok:false,mensaje:'Solo el asesor puede compartir los enlaces.'});
+    if(new Date(t[0].fecha_hora)>new Date())return res.status(400).json({ok:false,mensaje:'Los enlaces de evaluación se habilitan al llegar la fecha y hora programadas.'});
+    let [rows]=await db.query(`SELECT te.id_profesor,te.orden,te.token_publico,CONCAT(u.nombre,' ',u.apellido) nombre
+      FROM toma_protesta_evaluadores te JOIN usuarios u ON u.id_usuario=te.id_profesor WHERE te.id_toma=? ORDER BY te.orden`,[idToma]);
+    for(const r of rows){
+      if(!r.token_publico){
+        r.token_publico=crypto.randomBytes(24).toString('hex');
+        await db.query('UPDATE toma_protesta_evaluadores SET token_publico=? WHERE id_toma=? AND id_profesor=?',[r.token_publico,idToma,r.id_profesor]);
+      }
+    }
+    const base=(process.env.FRONTEND_ORIGIN||'http://localhost:3000').replace(/\/$/,'');
+    res.json({ok:true,enlaces:rows.map(r=>({orden:r.orden,id_profesor:r.id_profesor,nombre:r.nombre,enlace:`${base}/toma-protesta/${r.token_publico}`}))});
+  }catch(e){console.error('Error enlacesTomaProtesta:',e);res.status(500).json({ok:false,mensaje:'No se pudieron generar los enlaces de evaluación.'});}
 };
 
 exports.programarTomaProtesta = async (req,res) => {
   if(!requireRoles(req,res,[4])) return;
   const id=Number(req.params.idEstadia),b=req.body;
-  const evaluadores=[Number(b.id_profesor_1),Number(b.id_profesor_2)].filter(Boolean);
-  if(!b.fecha_hora||evaluadores.length!==2||evaluadores[0]===evaluadores[1])return res.status(400).json({ok:false,mensaje:'Selecciona fecha/hora y dos profesores evaluadores diferentes.'});
+  const evaluadores=[Number(b.id_profesor_1),Number(b.id_profesor_2),Number(b.id_profesor_3)].filter(Boolean);
+  if(!b.fecha_hora||evaluadores.length!==3||new Set(evaluadores).size!==3)return res.status(400).json({ok:false,mensaje:'Selecciona fecha/hora y tres profesores evaluadores diferentes.'});
+  const fecha=new Date(b.fecha_hora);
+  if(Number.isNaN(fecha.getTime()))return res.status(400).json({ok:false,mensaje:'La fecha y hora no son válidas.'});
+  if([0,6].includes(fecha.getDay()))return res.status(400).json({ok:false,mensaje:'La toma de protesta debe programarse de lunes a viernes.'});
   const conn=await db.getConnection();
   try{
-    const [own]=await conn.query('SELECT id_profesor FROM estadias WHERE id_estadia=? AND id_profesor=?',[id,req.usuario.id_usuario]);
+    const [own]=await conn.query(`SELECT e.id_profesor,e.hoja_previa_toma_generada_en,g.id_carrera
+      FROM estadias e JOIN grupos_estadia g ON g.id_grupo=e.id_grupo
+      WHERE e.id_estadia=? AND e.id_profesor=? LIMIT 1`,[id,req.usuario.id_usuario]);
     if(!own.length)return res.status(403).json({ok:false,mensaje:'Esta estadía no está asignada a tu cuenta.'});
     if(!(await cierreFinalAprobado(id)))return res.status(400).json({ok:false,mensaje:'Todas las validaciones institucionales y la aprobación de empresa deben estar aprobadas antes de programar la toma de protesta.'});
+    if(!own[0].hoja_previa_toma_generada_en)return res.status(400).json({ok:false,mensaje:'Primero genera y descarga la hoja previa de liberación para firmas.'});
+    const marks=evaluadores.map(()=>'?').join(',');
+    const [valid]=await conn.query(`SELECT p.id_profesor FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor
+      WHERE u.estado='activo' AND p.id_profesor IN (${marks})`,evaluadores);
+    if(valid.length!==3)return res.status(400).json({ok:false,mensaje:'Uno o más profesores evaluadores no están activos.'});
     await conn.beginTransaction();
     const [r]=await conn.query(`INSERT INTO tomas_protesta(id_estadia,fecha_hora,lugar,observaciones,estado,creada_por)
-      VALUES(?,?,?,?, 'programada',?) ON CONFLICT(id_estadia) DO UPDATE SET fecha_hora=EXCLUDED.fecha_hora,lugar=EXCLUDED.lugar,observaciones=EXCLUDED.observaciones,estado='programada',creada_por=EXCLUDED.creada_por
+      VALUES(?,?,?,?, 'programada',?) ON CONFLICT(id_estadia) DO UPDATE SET fecha_hora=EXCLUDED.fecha_hora,lugar=EXCLUDED.lugar,observaciones=EXCLUDED.observaciones,estado='programada',creada_por=EXCLUDED.creada_por,finalizada_en=NULL
       RETURNING id_toma`,[id,b.fecha_hora,b.lugar||null,b.observaciones||null,req.usuario.id_usuario]);
     let idToma=r.rows?.[0]?.id_toma||r.insertId;
     if(!idToma){const [t]=await conn.query('SELECT id_toma FROM tomas_protesta WHERE id_estadia=?',[id]);idToma=t[0].id_toma;}
+    await conn.query('DELETE FROM respuestas_toma_protesta WHERE id_toma=?',[idToma]);
     await conn.query('DELETE FROM toma_protesta_evaluadores WHERE id_toma=?',[idToma]);
     await conn.query('DELETE FROM evaluaciones_toma_protesta WHERE id_toma=?',[idToma]);
-    await conn.query('INSERT INTO toma_protesta_evaluadores(id_toma,id_profesor,orden) VALUES(?,?,1),(?,?,2)',[idToma,evaluadores[0],idToma,evaluadores[1]]);
+    for(let i=0;i<3;i++){
+      await conn.query('INSERT INTO toma_protesta_evaluadores(id_toma,id_profesor,orden,token_publico) VALUES(?,?,?,?)',
+        [idToma,evaluadores[i],i+1,crypto.randomBytes(24).toString('hex')]);
+    }
     await conn.commit();
-    res.json({ok:true,id_toma:idToma});
+    res.json({ok:true,id_toma:idToma,mensaje:'Toma de protesta programada con tres profesores evaluadores.'});
   }catch(e){try{await conn.rollback();}catch{};console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo programar la toma de protesta.'});}
   finally{conn.release();}
 };
@@ -1510,7 +1634,7 @@ exports.tomasProtestaProfesor = async (req,res) => {
   try{
     const [rows]=await db.query(`SELECT DISTINCT t.*,e.id_estadia,e.id_profesor asesor_id,e.proyecto_titulo,u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,
       CASE WHEN t.creada_por=? THEN 'asesor' ELSE 'evaluador' END participacion,
-      ev.codigo_nivel mi_codigo,ev.calificacion mi_calificacion,ev.observaciones mi_observaciones
+      ev.codigo_nivel mi_codigo,ev.calificacion mi_calificacion,ev.decision mi_decision,ev.observaciones mi_observaciones
       FROM tomas_protesta t JOIN estadias e ON e.id_estadia=t.id_estadia JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
       JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN grupos_estadia g ON g.id_grupo=e.id_grupo
       LEFT JOIN toma_protesta_evaluadores te ON te.id_toma=t.id_toma AND te.id_profesor=?
@@ -1533,8 +1657,8 @@ exports.evaluarTomaProtesta = async (req,res) => {
       VALUES(?,?,?,?,?) ON CONFLICT(id_toma,id_profesor) DO UPDATE SET codigo_nivel=EXCLUDED.codigo_nivel,calificacion=EXCLUDED.calificacion,observaciones=EXCLUDED.observaciones,evaluado_en=CURRENT_TIMESTAMP`,
       [idToma,req.usuario.id_usuario,codigo,Number(nivel[0].valor),req.body.observaciones||null]);
     const [evs]=await db.query('SELECT * FROM evaluaciones_toma_protesta WHERE id_toma=?',[idToma]);
-    if(evs.length>=2){
-      const aprobado=evs.every(e=>Number(e.calificacion)>0 && String(e.codigo_nivel)!=='NA');
+    if(evs.length>=3){
+      const aprobado=evs.every(e=>Number(e.calificacion)>0 && String(e.codigo_nivel)!=='NA' && (e.decision===null || e.decision==='aprobado'));
       const [t]=await db.query('SELECT id_estadia FROM tomas_protesta WHERE id_toma=?',[idToma]);
       if(aprobado){
         await db.query("UPDATE tomas_protesta SET estado='aprobada',finalizada_en=CURRENT_TIMESTAMP WHERE id_toma=?",[idToma]);
@@ -1564,7 +1688,7 @@ exports.cierreOverviewAdmin = async (req,res) => {
 exports.cierresProfesor = async (req,res) => {
   if(!requireRoles(req,res,[4])) return;
   try{
-    const [rows]=await db.query(`SELECT e.id_estadia,e.estado,e.proyecto_titulo,e.memoria_final_autorizada,e.memoria_final_ruta,e.memoria_final_nombre,COALESCE(e.memoria_final_version,0) memoria_final_version,e.cierre_solicitado_en,e.cierre_completado_en,
+    const [rows]=await db.query(`SELECT e.id_estadia,e.estado,e.proyecto_titulo,e.memoria_final_autorizada,e.memoria_final_ruta,e.memoria_final_nombre,COALESCE(e.memoria_final_version,0) memoria_final_version,e.hoja_previa_toma_generada_en,e.cierre_solicitado_en,e.cierre_completado_en,
       u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre,
       COUNT(v.id_validacion) validaciones_total,COUNT(v.id_validacion) FILTER (WHERE v.estado='aprobado') validaciones_aprobadas,
       MAX(t.id_toma) id_toma,MAX(t.estado) toma_estado,MAX(t.fecha_hora) toma_fecha

@@ -1,0 +1,31 @@
+SKILLMATCH V8.4
+
+1) Reemplaza los archivos del proyecto por los de V8.4.
+2) Ejecuta SOLO la migracion 21:
+
+\i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/21_estadias_v8_4_toma_protesta_3_evaluadores.sql'
+
+3) Comprueba que aparezca:
+Migracion 21 aplicada. SkillMatch V8.4 toma de protesta lista.
+
+4) Sube a Git:
+git add .
+git commit -m "version 8.4 toma protesta 3 evaluadores"
+git push origin main
+
+5) Flujo de prueba:
+- Profesor -> Toma de protesta.
+- Generar / descargar hoja previa.
+- Programar fecha/hora de lunes a viernes.
+- Seleccionar 3 profesores.
+- Al llegar la fecha, abrir "Enlaces jurado".
+- Compartir un enlace a cada evaluador.
+- Cada evaluador responde 5 preguntas y aprueba/rechaza.
+- Con 3 aprobaciones la estadia queda terminada.
+- Descargar Acta final.
+
+Profesores de prueba creados por la migracion:
+laura.mendoza@uteq.edu.mx
+ricardo.salazar@uteq.edu.mx
+mariana.torres@uteq.edu.mx
+Password: SkillMatch123
