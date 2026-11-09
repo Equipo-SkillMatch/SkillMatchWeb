@@ -115,7 +115,10 @@ router.put('/servicios/comprobantes-inicio/:id', controller.resolverComprobanteI
 router.get('/estadias/:idEstadia/documento-oficial', controller.datosDocumentoOficial);
 router.post('/estadias/:idEstadia/documentos/:tipo/generar', controller.marcarDocumentoOficialGenerado);
 router.post('/estadias/:idEstadia/documentos/:tipo/firmado', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirDocumentoOficialFirmado);
+router.get('/correo/configuracion', controller.configuracionCorreoEstadia);
 router.post('/estadias/:idEstadia/preparar-correo', controller.prepararCorreoEstadia);
+router.post('/correo/eventos/:idEvento/enviar', controller.enviarCorreoPreparado);
+router.post('/correo/procesar-pendientes', controller.procesarCorreosPendientes);
 router.get('/tablero-oficial', controller.tableroOficialEstadias);
 
 router.put('/cierre/datos-alumno', controller.confirmarDatosTitulo);

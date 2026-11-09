@@ -28,6 +28,8 @@ const createTransporter = async () => {
         const messageParts = [
           `From: ${mailOptions.from}`,
           `To: ${mailOptions.to}`,
+          ...(mailOptions.cc ? [`Cc: ${mailOptions.cc}`] : []),
+          ...(mailOptions.replyTo ? [`Reply-To: ${mailOptions.replyTo}`] : []),
           `Subject: ${utf8Subject}`,
           `Content-Type: text/html; charset=utf-8`,
           `MIME-Version: 1.0`,

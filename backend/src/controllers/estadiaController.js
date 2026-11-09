@@ -2,6 +2,7 @@ const db = require('../config/db');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { uploadedFilePath } = require('../utils/fileUrl');
+const { createNotification, sendNotificationById, processPendingNotifications, getEmailStatus } = require('../services/notificationService');
 
 const NIVEL_CALIFICACION = { SA: 8, DE: 9, AU: 10 };
 
@@ -1919,14 +1920,49 @@ exports.subirDocumentoOficialFirmado = async (req,res) => {
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo guardar el documento firmado.'});}
 };
 
+exports.configuracionCorreoEstadia = async (req,res) => {
+  if(!requireRoles(req,res,[1,4,5,6,7,8,9,10])) return;
+  try{
+    const status=getEmailStatus();
+    res.json({ok:true,...status,mensaje:status.configured?'Servicio de correo configurado.':'Servicio de correo pendiente de configuración.'});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo consultar la configuración de correo.'});}
+};
+
 exports.prepararCorreoEstadia = async (req,res) => {
-  if(!requireRoles(req,res,[1,4,6,10])) return;
+  if(!requireRoles(req,res,[1,4,5,6,7,8,9,10])) return;
   const id=Number(req.params.idEstadia),b=req.body||{};
   try{
-    await db.query(`INSERT INTO eventos_notificacion_estadia(id_estadia,tipo,destinatarios,asunto,contexto,estado)
-      VALUES(?,?,?,?,?::jsonb,'pendiente_configuracion')`,[id,String(b.tipo||'CORREO_MANUAL'),String(b.para||''),String(b.asunto||'Notificación de estadía'),JSON.stringify({mensaje:b.mensaje||'',documento:b.documento||null,cc:b.cc||''})]);
-    res.json({ok:true,configurado:false,mensaje:'El correo quedó preparado. El servicio de envío todavía no está configurado.'});
-  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo preparar el correo.'});}
+    const result=await createNotification({
+      idEstadia:id,
+      tipo:String(b.tipo||'CORREO_MANUAL'),
+      para:String(b.para||''),
+      cc:String(b.cc||''),
+      asunto:String(b.asunto||'Notificación de estadía'),
+      mensaje:String(b.mensaje||''),
+      documento:b.documento||null,
+      enlace:b.enlace||null,
+      creadoPor:req.usuario.id_usuario,
+      autoSend:Boolean(b.enviar_ahora)
+    });
+    const enviado=result.estado==='enviado';
+    res.json({ok:true,...result,mensaje:enviado?'Correo enviado correctamente.':result.configurado?'Correo preparado y listo para envío.':'Correo guardado en cola. Falta configurar el proveedor de envío.'});
+  }catch(e){console.error(e);res.status(e.code==='MAIL_NOT_CONFIGURED'?400:500).json({ok:false,mensaje:e.message||'No se pudo preparar el correo.'});}
+};
+
+exports.enviarCorreoPreparado = async (req,res) => {
+  if(!requireRoles(req,res,[1,4,5,6,7,8,9,10])) return;
+  try{
+    const result=await sendNotificationById(Number(req.params.idEvento));
+    res.json({ok:true,...result,mensaje:'Correo enviado correctamente.'});
+  }catch(e){console.error(e);res.status(e.code==='MAIL_NOT_CONFIGURED'?400:500).json({ok:false,mensaje:e.message||'No se pudo enviar el correo.'});}
+};
+
+exports.procesarCorreosPendientes = async (req,res) => {
+  if(!requireRoles(req,res,[1])) return;
+  try{
+    const result=await processPendingNotifications(req.body?.limite||20);
+    res.json({ok:true,...result,mensaje:result.configured?`Procesados ${result.processed}; enviados ${result.sent}; errores ${result.errors}.`:'El proveedor de correo todavía no está configurado.'});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:e.message||'No se pudo procesar la cola de correos.'});}
 };
 
 exports.tableroOficialEstadias = async (req,res) => {

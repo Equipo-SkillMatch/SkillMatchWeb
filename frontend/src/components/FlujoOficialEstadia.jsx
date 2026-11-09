@@ -71,6 +71,7 @@ export default function FlujoOficialEstadia({ role }) {
   const [official, setOfficial] = useState(null);
   const [docs, setDocs] = useState([]);
   const [mail, setMail] = useState(null);
+  const [mailConfig, setMailConfig] = useState({ configured: false, provider: 'disabled', from: '' });
   const [admins, setAdmins] = useState([]);
   const [carreras, setCarreras] = useState([]);
   const [adminForm, setAdminForm] = useState({
@@ -120,6 +121,11 @@ export default function FlujoOficialEstadia({ role }) {
   }
 
   useEffect(() => { load(); }, [role]);
+
+  useEffect(() => {
+    if (![1,4,5,6,7,8,9,10].includes(Number(role))) return;
+    api('/correo/configuracion').then(setMailConfig).catch(() => setMailConfig({ configured:false, provider:'disabled', from:'' }));
+  }, [role]);
 
   async function buscarRFC() {
     const rfc = form.empresa_rfc.trim().toUpperCase();
@@ -285,8 +291,11 @@ export default function FlujoOficialEstadia({ role }) {
 
   async function prepareMail() {
     try {
-      const result = await api(`/estadias/${selected.id_estadia}/preparar-correo`, { method: 'POST', body: JSON.stringify(mail) });
-      toast(result.mensaje, 'warning');
+      const result = await api(`/estadias/${selected.id_estadia}/preparar-correo`, {
+        method: 'POST',
+        body: JSON.stringify({ ...mail, enviar_ahora: Boolean(mailConfig.configured) })
+      });
+      toast(result.mensaje, result.estado === 'enviado' ? 'success' : 'warning');
       setMail(null);
     } catch (error) { toast(error.message, 'error'); }
   }
@@ -498,7 +507,7 @@ function BoardView(props) {
     {role === 1 && <AdminManager admins={admins} carreras={carreras} form={adminForm} setForm={setAdminForm} save={saveAdmin} toggle={toggleAdmin} />}
     <div className="fo-card"><div className="fo-table-wrap"><table className="fo-table green"><thead><tr><th>Alumno</th><th>Grupo</th><th>Docs inicio</th><th>Expediente</th><th>Carta inicio</th><th>Inicio formal</th><th>Eval. empresa 1</th><th>Talleres</th><th>Eval. empresa 2</th><th>Memoria</th><th>Biblioteca</th><th>Labs</th><th>Empresa</th><th>Donativo</th><th>Inglés</th><th>Dirección</th><th>Vinculación</th><th>Datos título</th><th>Pago título</th><th>Carta final</th><th>Autorización memoria</th><th>Toma</th><th></th></tr></thead><tbody>{board.map(row => <tr key={row.id_estadia}><td><b>{row.nombre} {row.apellido}</b><small>{row.matricula}</small></td><td>{row.grupo_nombre}</td><td><Status value={Number(row.comprobantes_inicio_aprobados) >= 3 ? 'aprobado' : `${row.comprobantes_inicio_aprobados}/3`} /></td><td><Status value={row.datos_oficiales_completos ? 'aprobado' : 'pendiente'} /></td><td><Status value={row.carta_inicio_estado} /></td><td><Status value={row.inicio_formal ? 'aprobado' : 'pendiente'} /></td><td><Status value={row.evaluacion_empresa_inicial} /></td><td><Status value={Number(row.talleres_aprobados) >= 3 ? 'aprobado' : `${row.talleres_aprobados}/3`} /></td><td><Status value={row.evaluacion_empresa_final} /></td><td><Status value={row.memoria_final_ruta ? 'aprobado' : 'pendiente'} /></td><td><Status value={row.biblioteca} /></td><td><Status value={row.laboratorios} /></td><td><Status value={row.empresa_memoria} /></td><td><Status value={row.donativo} /></td><td><Status value={row.ingles} /></td><td><Status value={row.direccion} /></td><td><Status value={row.vinculacion} /></td><td><Status value={row.datos_alumno} /></td><td><Status value={row.pago_titulo} /></td><td><Status value={row.carta_final_estado} /></td><td><Status value={row.autorizacion_memoria_estado} /></td><td><Status value={row.toma_estado} /></td><td><div className="fo-actions">{role === 4 && <button className="fo-link" onClick={() => openOfficial(row)}>Expediente</button>}{role === 1 && row.direccion_id && row.direccion !== 'aprobado' && <button onClick={() => resolveArea(row.direccion_id, 'direccion')}>Aprobar Dirección</button>}{role === 5 && row.vinculacion_id && row.vinculacion !== 'aprobado' && <button onClick={() => resolveArea(row.vinculacion_id, 'vinculacion')}>Aprobar Vinculación</button>}</div></td></tr>)}</tbody></table></div></div>
     {selected && official && <OfficialModal selected={selected} setSelected={setSelected} official={official} setOfficial={setOfficial} saveOfficial={saveOfficial} requestFinalApprovals={requestFinalApprovals} docState={docState} signedDoc={signedDoc} genDoc={genDoc} uploadSigned={uploadSigned} setMail={setMail} authorizeFormalStart={authorizeFormalStart} />}
-    {mail && <MailModal mail={mail} setMail={setMail} prepareMail={prepareMail} />}
+    {mail && <MailModal mail={mail} setMail={setMail} prepareMail={prepareMail} mailConfig={mailConfig} />}
   </div>;
 }
 
@@ -514,6 +523,16 @@ function OfficialModal({ selected, setSelected, official, setOfficial, saveOffic
   return <div className="fo-modal-bg" onClick={() => setSelected(null)}><div className="fo-modal" onClick={e => e.stopPropagation()}><div className="fo-modal-head"><div><small>{selected.matricula} · {selected.grupo_nombre}</small><h2>Expediente oficial del proyecto</h2><p>Campos basados en el formato oficial “Datos para registrar el proyecto de estadía”.</p></div><button onClick={() => setSelected(null)}>×</button></div><div className="fo-modal-body"><section className="fo-summary"><b>Alumno</b><span>{official.alumno_nombre} {official.alumno_apellido}</span><b>Matrícula</b><span>{official.matricula}</span><b>Correo</b><span>{official.alumno_correo}</span><b>Teléfono</b><span>{official.alumno_telefono || '—'}</span><b>Carrera</b><span>{official.carrera_nombre}</span><b>Horario</b><span>{official.horario_laboral || '—'}</span></section><div className="fo-official-form">{officialFields.map(([key, label]) => <Field key={key} label={label} full={longFields.has(key)}>{textAreaFields.has(key) ? <textarea value={official[key] || ''} onChange={e => setOfficial({ ...official, [key]: e.target.value })} /> : <input type={key.includes('inversion') ? 'number' : 'text'} value={official[key] ?? ''} onChange={e => setOfficial({ ...official, [key]: e.target.value })} />}</Field>)}<Field label="¿Proyecto de innovación / I+D?"><select value={String(Boolean(official.proyecto_innovacion))} onChange={e => setOfficial({ ...official, proyecto_innovacion: e.target.value === 'true' })}><option value="false">No</option><option value="true">Sí</option></select></Field><Field label="¿El alumno ya trabaja en la empresa?"><select value={String(Boolean(official.alumno_trabaja_empresa))} onChange={e => setOfficial({ ...official, alumno_trabaja_empresa: e.target.value === 'true' })}><option value="false">No</option><option value="true">Sí</option></select></Field></div><div className="fo-actions end"><button onClick={authorizeFormalStart}>Autorizar inicio formal</button><button onClick={requestFinalApprovals}>Solicitar Dirección / Vinculación</button><button className="fo-primary" onClick={saveOfficial}>Guardar expediente oficial</button></div><section className="fo-documents"><h3>Documentos oficiales</h3><p>SkillMatch llena los datos automáticamente. Se conserva el documento generado y la versión firmada.</p>{documentTypes.map(([tipo, nombre]) => <div className="fo-document-row" key={tipo}><div><strong>{nombre}</strong><Status value={docState(tipo)} />{signedDoc(tipo) && <a href={buildFileUrl(signedDoc(tipo))} target="_blank" rel="noreferrer">Ver firmado</a>}</div><div className="fo-actions"><button onClick={() => genDoc(tipo)}>Generar / imprimir</button><button onClick={() => setMail({ tipo: 'ENVIO_DOCUMENTO', para: official.contacto_carta_correo || official.asesor_org_correo || '', cc: official.alumno_correo || '', asunto: `${nombre} - ${official.alumno_nombre} ${official.alumno_apellido}`, mensaje: 'Se comparte el documento generado desde SkillMatch.', documento: tipo })}>Enviar por correo</button><label className="fo-small-upload">Subir firmado<input type="file" accept="application/pdf,image/*" onChange={e => uploadSigned(tipo, e.target.files?.[0])} /></label></div></div>)}</section></div></div></div>;
 }
 
-function MailModal({ mail, setMail, prepareMail }) {
-  return <div className="fo-modal-bg" onClick={() => setMail(null)}><div className="fo-mail-modal" onClick={e => e.stopPropagation()}><h3>Enviar por correo</h3><p>La interfaz queda preparada; el proveedor SMTP/API se configurará después.</p><label>Para<input value={mail.para} onChange={e => setMail({ ...mail, para: e.target.value })} /></label><label>CC<input value={mail.cc || ''} onChange={e => setMail({ ...mail, cc: e.target.value })} /></label><label>Asunto<input value={mail.asunto} onChange={e => setMail({ ...mail, asunto: e.target.value })} /></label><label>Mensaje<textarea value={mail.mensaje} onChange={e => setMail({ ...mail, mensaje: e.target.value })} /></label><div className="fo-actions end"><button onClick={() => setMail(null)}>Cancelar</button><button className="fo-primary" onClick={prepareMail}>Preparar envío</button></div></div></div>;
+function MailModal({ mail, setMail, prepareMail, mailConfig }) {
+  const ready = Boolean(mailConfig?.configured);
+  return <div className="fo-modal-bg" onClick={() => setMail(null)}><div className="fo-mail-modal" onClick={e => e.stopPropagation()}>
+    <div className="fo-mail-head"><div><small>NOTIFICACIONES SKILLMATCH</small><h3>Enviar por correo</h3></div><span className={`fo-mail-state ${ready ? 'ready' : 'pending'}`}>{ready ? `Configurado · ${mailConfig.provider}` : 'Pendiente de configuración'}</span></div>
+    <p>{ready ? `El mensaje se enviará desde ${mailConfig.from || 'la cuenta institucional configurada'}.` : 'El mensaje se guardará en la cola de notificaciones. Cuando se configure el proveedor podrá enviarse sin volver a capturarlo.'}</p>
+    <label>Para<input type="email" value={mail.para} onChange={e => setMail({ ...mail, para: e.target.value })} /></label>
+    <label>CC<input value={mail.cc || ''} onChange={e => setMail({ ...mail, cc: e.target.value })} placeholder="correo1@..., correo2@..." /></label>
+    <label>Asunto<input value={mail.asunto} onChange={e => setMail({ ...mail, asunto: e.target.value })} /></label>
+    <label>Mensaje<textarea value={mail.mensaje} onChange={e => setMail({ ...mail, mensaje: e.target.value })} /></label>
+    {mail.documento && <div className="fo-mail-attachment"><b>Documento relacionado</b><span>{String(mail.documento).replaceAll('_',' ')}</span></div>}
+    <div className="fo-actions end"><button onClick={() => setMail(null)}>Cancelar</button><button className="fo-primary" onClick={prepareMail}>{ready ? 'Enviar correo' : 'Guardar en cola'}</button></div>
+  </div></div>;
 }
