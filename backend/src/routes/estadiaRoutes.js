@@ -105,4 +105,27 @@ router.get('/profesor/cierres', controller.cierresProfesor);
 router.post('/profesor/tomas-protesta/:idToma/evaluacion', controller.evaluarTomaProtesta);
 router.get('/cierre/overview', controller.cierreOverviewAdmin);
 
+// V9: flujo oficial UTEQ
+router.get('/profesor/estadias/:idEstadia/proyecto-oficial', controller.obtenerProyectoOficial);
+router.put('/profesor/estadias/:idEstadia/proyecto-oficial', controller.guardarProyectoOficial);
+router.get('/mi-estadia/comprobantes-inicio', controller.misComprobantesInicio);
+router.post('/mi-estadia/comprobantes-inicio/:tipo', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirComprobanteInicio);
+router.get('/servicios/comprobantes-inicio', controller.comprobantesInicioServicios);
+router.put('/servicios/comprobantes-inicio/:id', controller.resolverComprobanteInicio);
+router.get('/estadias/:idEstadia/documento-oficial', controller.datosDocumentoOficial);
+router.post('/estadias/:idEstadia/documentos/:tipo/generar', controller.marcarDocumentoOficialGenerado);
+router.post('/estadias/:idEstadia/documentos/:tipo/firmado', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirDocumentoOficialFirmado);
+router.post('/estadias/:idEstadia/preparar-correo', controller.prepararCorreoEstadia);
+router.get('/tablero-oficial', controller.tableroOficialEstadias);
+
+router.put('/cierre/datos-alumno', controller.confirmarDatosTitulo);
+router.post('/cierre/pago-titulo', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirPagoTitulo);
+router.get('/aprobaciones-oficiales', controller.aprobacionesOficiales);
+router.put('/aprobaciones-oficiales/:id', controller.resolverAprobacionOficial);
+router.post('/profesor/estadias/:idEstadia/solicitar-aprobaciones-finales', controller.crearSolicitudAprobacionesFinales);
+
+router.get('/administradores-estadia', controller.listarAdministradoresEstadia);
+router.post('/administradores-estadia', controller.crearAdministradorEstadia);
+router.put('/administradores-estadia/:id/estado', controller.estadoAdministradorEstadia);
+
 module.exports = router;

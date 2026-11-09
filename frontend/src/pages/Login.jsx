@@ -55,7 +55,7 @@ export default function Login() {
     if (role === '3') navigate('/dashboard-empresa');
     else if (role === '4') navigate('/dashboard-profesores');
     else if (role === '1' || role === '5') navigate('/dashboard-vinculacion');
-    else if (['6','7','8','9'].includes(role)) navigate('/estadias');
+    else if (['6','7','8','9','10'].includes(role)) navigate('/estadias');
     else navigate('/dashboard-estudiante');
   };
 

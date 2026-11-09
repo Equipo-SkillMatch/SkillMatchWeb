@@ -8,6 +8,7 @@ export default function TomaProtestaPublica(){
   const {token}=useParams();
   const [data,setData]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[done,setDone]=useState(false);
   const [respuestas,setRespuestas]=useState({}),[decision,setDecision]=useState(''),[observaciones,setObservaciones]=useState('');
+  const [availabilityNote,setAvailabilityNote]=useState(''),[availabilityDone,setAvailabilityDone]=useState(false);
 
   const load=async()=>{
     setLoading(true);setError('');
@@ -26,6 +27,15 @@ export default function TomaProtestaPublica(){
     const vals=Object.values(respuestas).map(Number).filter(Number.isFinite);
     return vals.length?Math.round((vals.reduce((a,b)=>a+b,0)/vals.length)*100)/100:0;
   },[respuestas]);
+
+  const respondAvailability=async(decisionDate)=>{
+    setError('');
+    try{
+      const r=await fetch(`${API_BASE}/public/toma-protesta/${token}/disponibilidad`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:decisionDate,observaciones:availabilityNote})});
+      const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.mensaje||'No se pudo registrar la disponibilidad.');
+      setAvailabilityDone(true);await load();
+    }catch(e){setError(e.message)}
+  };
 
   const send=async()=>{
     setError('');
@@ -57,7 +67,7 @@ export default function TomaProtestaPublica(){
         <div><small>Fecha y hora</small><strong>{new Date(data.toma.fecha_hora).toLocaleString('es-MX')}</strong></div>
         <div><small>Evaluador</small><strong>{data.toma.evaluador_nombre}</strong></div>
       </div>
-      {!data.habilitada?<div className="info-box compact"><p>La evaluación se habilitará cuando llegue la fecha y hora programadas.</p></div>:<>
+      {data.toma.disponibilidad_estado !== 'aceptada' ? <div className="info-box compact" style={{marginTop:20}}><h2>Confirmación de fecha</h2><p>Antes de la toma de protesta confirma si puedes participar en la fecha y hora propuestas.</p><label className="review-observations"><span>Observaciones opcionales</span><textarea value={availabilityNote} onChange={e=>setAvailabilityNote(e.target.value)} placeholder="Si rechazas, puedes indicar el motivo o sugerir disponibilidad."/></label><div className="validation-actions"><button className="primary-btn" onClick={()=>respondAvailability('aceptada')}>Aceptar fecha</button><button className="danger-btn" onClick={()=>respondAvailability('rechazada')}>Rechazar fecha</button></div>{availabilityDone&&<p>Respuesta registrada.</p>}</div> : !data.habilitada?<div className="info-box compact"><p>✓ Fecha aceptada. La evaluación se habilitará cuando llegue la fecha y hora programadas.</p></div>:<>
         <h2>Evaluación del jurado</h2>
         <p className="muted">Asigna una calificación de 0 a 10 a cada criterio.</p>
         <div className="criteria-evaluation">

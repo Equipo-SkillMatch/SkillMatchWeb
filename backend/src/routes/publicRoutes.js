@@ -11,6 +11,7 @@ router.post('/evaluacion-empresa/:token', publicController.responderEvaluacionEm
 router.get('/aprobacion-memoria/:token', publicController.obtenerAprobacionMemoriaEmpresa);
 router.post('/aprobacion-memoria/:token', publicController.responderAprobacionMemoriaEmpresa);
 router.get('/toma-protesta/:token', publicController.obtenerTomaProtestaPublica);
+router.post('/toma-protesta/:token/disponibilidad', publicController.responderDisponibilidadTomaPublica);
 router.post('/toma-protesta/:token', publicController.responderTomaProtestaPublica);
 router.get('/proyectos', publicController.listarProyectosPublicos);
 router.get('/proyectos/:id', publicController.obtenerDetalleProyecto);

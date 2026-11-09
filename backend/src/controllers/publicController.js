@@ -292,7 +292,7 @@ exports.responderAprobacionMemoriaEmpresa = async (req,res) => {
 exports.obtenerTomaProtestaPublica = async (req,res) => {
   try{
     const token=String(req.params.token||'');
-    const [rows]=await db.query(`SELECT te.id_toma,te.id_profesor,te.orden,t.fecha_hora,t.lugar,t.estado,
+    const [rows]=await db.query(`SELECT te.id_toma,te.id_profesor,te.orden,te.disponibilidad_estado,te.disponibilidad_observaciones,te.disponibilidad_respondida_en,t.fecha_hora,t.lugar,t.estado,
       e.proyecto_titulo,e.empresa_razon_social,es.matricula,u.nombre,u.apellido,g.nombre grupo_nombre,p.nombre periodo_nombre,
       CONCAT(up.nombre,' ',up.apellido) evaluador_nombre,
       ev.calificacion promedio,ev.decision,ev.observaciones,ev.evaluado_en
@@ -308,7 +308,7 @@ exports.obtenerTomaProtestaPublica = async (req,res) => {
       WHERE te.token_publico=? LIMIT 1`,[token]);
     if(!rows.length)return res.status(404).json({ok:false,mensaje:'Enlace de toma de protesta no valido.'});
     const item=rows[0];
-    const habilitada=new Date(item.fecha_hora)<=new Date();
+    const habilitada=item.disponibilidad_estado==='aceptada' && new Date(item.fecha_hora)<=new Date();
     const [preguntas]=await db.query('SELECT id_pregunta,pregunta,orden FROM preguntas_toma_protesta WHERE activa=TRUE ORDER BY orden');
     let respuestas=[];
     if(item.evaluado_en){
@@ -316,6 +316,25 @@ exports.obtenerTomaProtestaPublica = async (req,res) => {
     }
     res.json({ok:true,toma:item,preguntas,respuestas,habilitada});
   }catch(e){console.error('Error obtenerTomaProtestaPublica:',e);res.status(500).json({ok:false,mensaje:'No se pudo cargar la toma de protesta.'});}
+};
+
+exports.responderDisponibilidadTomaPublica = async (req,res) => {
+  const token=String(req.params.token||'');
+  const decision=String(req.body.decision||'');
+  if(!['aceptada','rechazada'].includes(decision))return res.status(400).json({ok:false,mensaje:'Selecciona aceptar o rechazar la fecha propuesta.'});
+  try{
+    const [asig]=await db.query(`SELECT te.id_toma,te.id_profesor,t.id_estadia,t.fecha_hora
+      FROM toma_protesta_evaluadores te JOIN tomas_protesta t ON t.id_toma=te.id_toma WHERE te.token_publico=? LIMIT 1`,[token]);
+    if(!asig.length)return res.status(404).json({ok:false,mensaje:'Enlace de toma de protesta no válido.'});
+    await db.query(`UPDATE toma_protesta_evaluadores SET disponibilidad_estado=?,disponibilidad_observaciones=?,disponibilidad_respondida_en=CURRENT_TIMESTAMP
+      WHERE token_publico=?`,[decision,req.body.observaciones||null,token]);
+    const [all]=await db.query('SELECT disponibilidad_estado FROM toma_protesta_evaluadores WHERE id_toma=? ORDER BY orden',[asig[0].id_toma]);
+    let estado='programada';
+    if(all.some(x=>x.disponibilidad_estado==='rechazada')) estado='fecha_rechazada';
+    else if(all.length===3 && all.every(x=>x.disponibilidad_estado==='aceptada')) estado='fecha_confirmada';
+    await db.query('UPDATE tomas_protesta SET estado=? WHERE id_toma=?',[estado,asig[0].id_toma]);
+    res.json({ok:true,estado_toma:estado,mensaje:decision==='aceptada'?'Fecha aceptada correctamente.':'Fecha rechazada. El asesor deberá proponer una nueva fecha.'});
+  }catch(e){console.error('Error responderDisponibilidadTomaPublica:',e);res.status(500).json({ok:false,mensaje:'No se pudo registrar tu respuesta de disponibilidad.'});}
 };
 
 exports.responderTomaProtestaPublica = async (req,res) => {
@@ -329,6 +348,8 @@ exports.responderTomaProtestaPublica = async (req,res) => {
     const [asig]=await conn.query(`SELECT te.id_toma,te.id_profesor,t.fecha_hora,t.id_estadia
       FROM toma_protesta_evaluadores te JOIN tomas_protesta t ON t.id_toma=te.id_toma WHERE te.token_publico=? LIMIT 1`,[token]);
     if(!asig.length)return res.status(404).json({ok:false,mensaje:'Enlace de toma de protesta no valido.'});
+    const [disp]=await conn.query('SELECT disponibilidad_estado FROM toma_protesta_evaluadores WHERE token_publico=? LIMIT 1',[token]);
+    if(disp[0]?.disponibilidad_estado!=='aceptada')return res.status(400).json({ok:false,mensaje:'Primero debes aceptar la fecha propuesta para la toma de protesta.'});
     if(new Date(asig[0].fecha_hora)>new Date())return res.status(400).json({ok:false,mensaje:'La evaluacion se habilita al llegar la fecha y hora programadas.'});
     await conn.beginTransaction();
     let suma=0;

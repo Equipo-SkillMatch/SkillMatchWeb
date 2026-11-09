@@ -1,0 +1,68 @@
+SKILLMATCH V9.0 - DESPLIEGUE Y PRUEBA
+=====================================
+
+1) Reemplazar/agregar los archivos de V9 en el proyecto local.
+
+2) ANTES de desplegar el backend ejecutar en PostgreSQL:
+\i 'C:/Users/danie/OneDrive/Desktop/SkillMatchWeb/backend/sql/22_estadias_v9_flujo_oficial.sql'
+
+Resultado esperado:
+Migracion 22 aplicada. SkillMatch V9 flujo oficial listo.
+
+3) Verificar sintaxis local (opcional):
+node --check backend/src/controllers/estadiaController.js
+node --check backend/src/controllers/publicController.js
+node --check backend/src/routes/estadiaRoutes.js
+node --check backend/src/routes/publicRoutes.js
+
+4) Git:
+git add .
+git commit -m "version 9 flujo oficial estadias"
+git push origin main
+
+5) Esperar despliegues de Render y Vercel.
+
+USUARIOS DEMO
+-------------
+Todos: SkillMatch123
+
+Superadmin:
+superadmin.skillmatch@uteq.edu.mx
+superadmin.academico@uteq.edu.mx
+
+Administradores de estadía:
+raul.estadias@uteq.edu.mx
+ubaldo.estadias@uteq.edu.mx
+
+Profesores Software:
+karina.mendoza@uteq.edu.mx
+eduardo.salas@uteq.edu.mx
+paola.rivera@uteq.edu.mx
+
+Profesores Mecatrónica:
+alberto.mejia@uteq.edu.mx
+sofia.navarro@uteq.edu.mx
+jorge.cervantes@uteq.edu.mx
+
+Alumnos demo:
+demo.estudiante01@uteq.edu.mx ... demo.estudiante10@uteq.edu.mx
+
+PRUEBA RECOMENDADA
+------------------
+A) Superadmin: revisar/crear administrador de estadías.
+B) Administrador: crear/configurar periodo, grupos, asesores y talleres; agregar alumno a grupo.
+C) Alumno: registrar proyecto + RFC/empresa + horario; subir cuatrimestre, seguro e inscripción.
+D) Servicios Escolares: aprobar los 3 comprobantes.
+E) Profesor asesor: abrir Expediente oficial, completar los datos oficiales, generar/imprimir carta de inicio, subir PDF firmado y autorizar inicio formal.
+F) Empresa: responder primera evaluación.
+G) Admin habilita Taller 1/2/3; alumno entrega; profesor califica cada uno.
+H) Al tercer taller se habilitan memoria final + evaluación final de empresa.
+I) Alumno sube memoria final. Biblioteca/Labs/Empresa revisan.
+J) Alumno sube donativo e Inglés. Dirección, Vinculación, datos alumno y pago título se aprueban.
+K) Profesor genera carta final y autorización de memoria, sube versiones firmadas.
+L) Profesor programa toma; comparte enlaces. Cada jurado acepta/rechaza fecha. En fecha/hora, responde 5 preguntas y dictamen.
+M) Con 3 aprobaciones se cierra la estadía.
+
+CORREO
+------
+Los botones/modal "Enviar por correo" ya preparan y registran el evento, pero NO envían todavía porque no hay proveedor SMTP/API configurado.
