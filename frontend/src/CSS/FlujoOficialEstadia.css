@@ -52,3 +52,4 @@
   font-weight: 700;
   text-align: center;
 }
+.fo-small-upload.is-uploading{opacity:.72;cursor:wait;pointer-events:none;position:relative;padding-right:34px}.fo-small-upload.is-uploading:after{content:"";position:absolute;right:11px;top:50%;width:13px;height:13px;margin-top:-7px;border:2px solid #c9d7e5;border-top-color:#123b64;border-radius:50%;animation:foSpin .8s linear infinite}@keyframes foSpin{to{transform:rotate(360deg)}}

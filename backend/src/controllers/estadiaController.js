@@ -1790,20 +1790,47 @@ exports.enlacesTomaProtesta = async (req,res) => {
   if(!requireRoles(req,res,[4])) return;
   try{
     const idToma=Number(req.params.idToma);
-    const [t]=await db.query(`SELECT t.id_toma,t.fecha_hora,t.creada_por,e.id_profesor FROM tomas_protesta t JOIN estadias e ON e.id_estadia=t.id_estadia WHERE t.id_toma=? LIMIT 1`,[idToma]);
+    const [t]=await db.query(`SELECT t.id_toma,t.id_estadia,t.fecha_hora,t.lugar,t.estado,t.creada_por,
+      e.id_profesor,e.proyecto_titulo,CONCAT(a.nombre,' ',a.apellido) alumno_nombre,es.matricula,
+      CONCAT(asesor.nombre,' ',asesor.apellido) asesor_nombre
+      FROM tomas_protesta t
+      JOIN estadias e ON e.id_estadia=t.id_estadia
+      JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
+      JOIN usuarios a ON a.id_usuario=e.id_estudiante
+      JOIN usuarios asesor ON asesor.id_usuario=e.id_profesor
+      WHERE t.id_toma=? LIMIT 1`,[idToma]);
     if(!t.length)return res.status(404).json({ok:false,mensaje:'Toma de protesta no encontrada.'});
     if(Number(t[0].id_profesor)!==Number(req.usuario.id_usuario))return res.status(403).json({ok:false,mensaje:'Solo el asesor puede compartir los enlaces.'});
-    let [rows]=await db.query(`SELECT te.id_profesor,te.orden,te.token_publico,te.disponibilidad_estado,te.disponibilidad_observaciones,CONCAT(u.nombre,' ',u.apellido) nombre
-      FROM toma_protesta_evaluadores te JOIN usuarios u ON u.id_usuario=te.id_profesor WHERE te.id_toma=? ORDER BY te.orden`,[idToma]);
+    let [rows]=await db.query(`SELECT te.id_profesor,te.orden,te.token_publico,te.token_evaluacion,te.disponibilidad_estado,te.disponibilidad_observaciones,
+      CONCAT(u.nombre,' ',u.apellido) nombre,u.correo
+      FROM toma_protesta_evaluadores te JOIN usuarios u ON u.id_usuario=te.id_profesor
+      WHERE te.id_toma=? ORDER BY te.orden`,[idToma]);
     for(const r of rows){
       if(!r.token_publico){
         r.token_publico=crypto.randomBytes(24).toString('hex');
         await db.query('UPDATE toma_protesta_evaluadores SET token_publico=? WHERE id_toma=? AND id_profesor=?',[r.token_publico,idToma,r.id_profesor]);
       }
     }
+    const todosAceptaron=rows.length===3 && rows.every(r=>r.disponibilidad_estado==='aceptada');
+    if(todosAceptaron){
+      for(const r of rows){
+        if(!r.token_evaluacion){
+          r.token_evaluacion=crypto.randomBytes(24).toString('hex');
+          await db.query('UPDATE toma_protesta_evaluadores SET token_evaluacion=? WHERE id_toma=? AND id_profesor=?',[r.token_evaluacion,idToma,r.id_profesor]);
+        }
+      }
+    }else{
+      await db.query('UPDATE toma_protesta_evaluadores SET token_evaluacion=NULL WHERE id_toma=?',[idToma]);
+      rows=rows.map(r=>({...r,token_evaluacion:null}));
+    }
     const base=(process.env.FRONTEND_ORIGIN||'http://localhost:3000').replace(/\/$/,'');
-    res.json({ok:true,enlaces:rows.map(r=>({orden:r.orden,id_profesor:r.id_profesor,nombre:r.nombre,disponibilidad_estado:r.disponibilidad_estado,disponibilidad_observaciones:r.disponibilidad_observaciones,enlace:`${base}/toma-protesta/${r.token_publico}`}))});
-  }catch(e){console.error('Error enlacesTomaProtesta:',e);res.status(500).json({ok:false,mensaje:'No se pudieron generar los enlaces de evaluación.'});}
+    res.json({ok:true,toma:{...t[0],todos_aceptaron:todosAceptaron,participantes:rows.map(r=>r.nombre)},enlaces:rows.map(r=>({
+      orden:r.orden,id_profesor:r.id_profesor,nombre:r.nombre,correo:r.correo,
+      disponibilidad_estado:r.disponibilidad_estado,disponibilidad_observaciones:r.disponibilidad_observaciones,
+      enlace_disponibilidad:`${base}/toma-protesta/${r.token_publico}`,
+      enlace_evaluacion:todosAceptaron&&r.token_evaluacion?`${base}/toma-protesta/${r.token_evaluacion}`:null
+    }))});
+  }catch(e){console.error('Error enlacesTomaProtesta:',e);res.status(500).json({ok:false,mensaje:'No se pudieron preparar los enlaces de toma de protesta.'});}
 };
 
 exports.programarTomaProtesta = async (req,res) => {
@@ -1836,7 +1863,7 @@ exports.programarTomaProtesta = async (req,res) => {
     await conn.query('DELETE FROM toma_protesta_evaluadores WHERE id_toma=?',[idToma]);
     await conn.query('DELETE FROM evaluaciones_toma_protesta WHERE id_toma=?',[idToma]);
     for(let i=0;i<3;i++){
-      await conn.query('INSERT INTO toma_protesta_evaluadores(id_toma,id_profesor,orden,token_publico) VALUES(?,?,?,?)',
+      await conn.query('INSERT INTO toma_protesta_evaluadores(id_toma,id_profesor,orden,token_publico,token_evaluacion) VALUES(?,?,?,?,NULL)',
         [idToma,evaluadores[i],i+1,crypto.randomBytes(24).toString('hex')]);
     }
     await conn.commit();
@@ -2099,8 +2126,12 @@ exports.marcarDocumentoOficialGenerado = async (req,res) => {
         return res.status(400).json({ok:false,mensaje:'Antes de liberar los documentos finales deben estar aprobados todos los requisitos institucionales.'});
     }
     if(tipo==='acta_toma_protesta'){
-      const [t]=await db.query('SELECT id_toma FROM tomas_protesta WHERE id_estadia=? LIMIT 1',[id]);
+      const [t]=await db.query(`SELECT t.id_toma,t.estado,
+        COUNT(te.id_profesor) FILTER(WHERE te.disponibilidad_estado='aceptada') aceptados
+        FROM tomas_protesta t LEFT JOIN toma_protesta_evaluadores te ON te.id_toma=t.id_toma
+        WHERE t.id_estadia=? GROUP BY t.id_toma,t.estado LIMIT 1`,[id]);
       if(!t.length) return res.status(400).json({ok:false,mensaje:'Primero debe existir una toma de protesta programada.'});
+      if(Number(t[0].aceptados||0)!==3) return res.status(400).json({ok:false,mensaje:'Los tres profesores deben aceptar la fecha antes de generar el Acta de Toma de Protesta.'});
     }
     if(tipo==='acta_final'){
       const [e]=await db.query('SELECT estado FROM estadias WHERE id_estadia=? LIMIT 1',[id]);

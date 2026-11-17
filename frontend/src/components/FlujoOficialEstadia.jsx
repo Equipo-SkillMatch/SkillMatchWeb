@@ -73,6 +73,7 @@ export default function FlujoOficialEstadia({ role, mode = 'full' }) {
   const [selected, setSelected] = useState(null);
   const [official, setOfficial] = useState(null);
   const [docs, setDocs] = useState([]);
+  const [uploadingDoc, setUploadingDoc] = useState('');
   const [mail, setMail] = useState(null);
   const [mailConfig, setMailConfig] = useState({ configured: false, provider: 'disabled', from: '' });
   const [admins, setAdmins] = useState([]);
@@ -295,15 +296,21 @@ export default function FlujoOficialEstadia({ role, mode = 'full' }) {
   }
 
   async function uploadSigned(tipo, file) {
-    if (!file) return;
+    if (!file || uploadingDoc) return;
     const fd = new FormData();
     fd.append('archivo', file);
+    setUploadingDoc(tipo);
+    toast('Subiendo documento firmado…', 'warning');
     try {
       await api(`/estadias/${selected.id_estadia}/documentos/${tipo}/firmado`, { method: 'POST', body: fd });
-      toast('Documento firmado guardado.');
+      toast('Documento firmado subido con éxito.', 'success');
       await openOfficial(selected);
       await load();
-    } catch (error) { toast(error.message, 'error'); }
+    } catch (error) {
+      toast(error.message || 'No se pudo subir el documento firmado.', 'error');
+    } finally {
+      setUploadingDoc('');
+    }
   }
 
   async function prepareMail() {
@@ -378,20 +385,14 @@ export default function FlujoOficialEstadia({ role, mode = 'full' }) {
         <div class="letter-date">Santiago de Querétaro, Qro., a ${esc(fechaLarga)}</div>
         <h1>${title}</h1>
         <p>Por medio de la presente se hace constar que el alumno <b>${esc(alumnoTitulo.toUpperCase())}</b>, matrícula <b>${esc(matriculaTitulo)}</b>, de la carrera de <b>${esc(carreraTitulo)}</b>, concluyó el proceso académico y documental correspondiente a su Estadía Profesional denominada <b>“${esc(d.proyecto_titulo)}”</b>, realizada en <b>${esc(d.empresa_razon_social)}</b>.</p>
-        <p>El expediente cuenta con las liberaciones institucionales requeridas para continuar con el proceso de presentación de memoria y toma de protesta.</p>
-        <table class="approval-table"><tr><th>Área</th><th>Responsable / liberación</th></tr>
-          <tr><td>Asesor de empresa</td><td>${esc(d.asesor_org_nombre || 'Pendiente')}</td></tr>
-          <tr><td>Profesor asesor</td><td>${esc(d.asesor_nombre || 'Pendiente')}</td></tr>
-          <tr><td>Biblioteca</td><td>${esc(validationName('biblioteca'))}</td></tr>
-          <tr><td>Laboratorios</td><td>${esc(validationName('laboratorios'))}</td></tr>
-          <tr><td>Dirección</td><td>${esc(validationName('direccion') || autoridad)}</td></tr>
-        </table>
+        <p>El expediente institucional acredita que la memoria técnica y los requisitos de cierre fueron revisados y liberados por las áreas responsables. En consecuencia, el alumno queda autorizado para continuar con la presentación de memoria y el proceso de toma de protesta.</p>
+        <div class="release-note"><b>Constancia de liberación</b><span>Las firmas siguientes acreditan la conformidad de cada responsable dentro del expediente de estadía.</span></div>
         ${signatures([
           {name:d.asesor_org_nombre,role:'Asesor de la empresa'},
           {name:d.asesor_nombre,role:'Profesor asesor'},
           {name:validationName('biblioteca'),role:'Biblioteca'},
           {name:validationName('laboratorios'),role:'Laboratorios'},
-          {name:validationName('direccion') || autoridad,role:d.super_cargo || 'Director de División'}
+          {name:validationName('direccion') !== 'Pendiente de firma' ? validationName('direccion') : autoridad,role:d.super_cargo || 'Director de División'}
         ])}`;
     } else if (tipo === 'autorizacion_memoria') {
       title = 'AUTORIZACIÓN DE PRESENTACIÓN DE MEMORIA';
@@ -420,9 +421,8 @@ export default function FlujoOficialEstadia({ role, mode = 'full' }) {
         <table class="jury"><tr><th>NOMBRES</th><th>FIRMAS</th></tr>${[0,1,2].map(i=>`<tr><td>${esc((jurado[i]?.nombre || `PROFESOR EVALUADOR ${i+1}`).toUpperCase())}</td><td><span class="signature-line"></span></td></tr>`).join('')}</table>
         <p>Quienes procederán a dar fe de la entrega y presentación de la Memoria de Estadía Profesional del alumno:</p>
         <h2 class="student-name">${esc(alumnoTitulo.toUpperCase())}</h2>
-        <p>en virtud de haber cumplido satisfactoriamente con los requisitos institucionales correspondientes al proceso de Estadía Profesional.</p>
-        <p>Por lo que queda facultado(a) para ejercer la carrera de:</p><h2 class="career">${esc(carreraTitulo)}</h2>
-        <p>A continuación se tomó la protesta de Ley en los términos siguientes:</p>
+        <p>Quienes dan fe de la presentación de la memoria y del cumplimiento de los requisitos institucionales de la Estadía Profesional.</p>
+        <p>Se procede a la protesta de Ley correspondiente a la carrera de:</p><h2 class="career">${esc(carreraTitulo)}</h2>
         <p class="oath"><b>¿PROTESTA USTED EJERCER SU PROFESIÓN CON ENTUSIASMO Y HONRADEZ, PREPARARSE DE FORMA PERMANENTE EN LA CIENCIA, LA TÉCNICA Y LO HUMANO, REPRESENTAR SIEMPRE DE MANERA DIGNA A LA UNIVERSIDAD Y SERVIR CON INTEGRIDAD, INTELIGENCIA, VOLUNTAD Y AMOR A SU PATRIA?</b></p>
         <p class="yes">SÍ, PROTESTO</p>
         ${signatures([{name:alumnoTitulo,role:'Nombre y firma del alumno'}])}
@@ -448,10 +448,12 @@ export default function FlujoOficialEstadia({ role, mode = 'full' }) {
     const win = window.open('', '_blank');
     if (!win) return toast('El navegador bloqueó la ventana de impresión.', 'warning');
     win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
-      @page{size:letter;margin:15mm 16mm 17mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#172033;font-size:10.7pt;line-height:1.42;margin:0;background:#fff}
-      .institution-head{display:grid;grid-template-columns:105px 1fr 105px;align-items:center;border-bottom:2px solid #27364c;padding-bottom:9px;margin-bottom:18px}.institution-head img{max-width:84px;max-height:67px;object-fit:contain}.institution-head img:last-child{justify-self:end;max-width:92px}.institution-title{text-align:center}.institution-title strong{display:block;font-size:13pt;letter-spacing:.3px}.institution-title span{display:block;font-size:8.5pt;margin-top:4px;color:#536174}.format-code{text-align:right;font-size:7.7pt;line-height:1.25;margin-top:-8px;margin-bottom:14px;color:#333}
-      h1{text-align:center;font-size:13.5pt;margin:23px 0 22px;letter-spacing:.15px}h1.acta-title{font-family:Georgia,serif;font-size:22pt;margin:32px 0}.letter-date{text-align:right;margin-bottom:28px}.recipient{margin:24px 0;line-height:1.35}p{text-align:justify;margin:12px 0}.info{display:grid;grid-template-columns:155px 1fr;gap:7px 14px;margin:22px 0}.section-title{font-size:11pt;margin:24px 0 10px}.approval-table{width:100%;border-collapse:collapse;margin:18px 0}.approval-table th,.approval-table td{border:1px solid #b8c1cc;padding:8px;text-align:left}.approval-table th{background:#f2f5f8}.signs{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:25px;margin-top:58px;text-align:center;page-break-inside:avoid}.sign .line{border-top:1px solid #222;height:8px}.sign b,.sign span{display:block;font-size:8.8pt}.sign span{margin-top:3px}.director-sign{max-width:340px;margin:18px auto 0}.jury{width:100%;border-collapse:collapse;margin:20px 0 48px}.jury th{font-weight:normal;padding:5px}.jury td{padding:9px 18px}.jury td:first-child{width:62%}.signature-line{display:block;border-bottom:1px solid #333;height:22px}.student-name,.career{text-align:center;text-decoration:underline;font-size:12pt;margin:18px 0}.oath{font-size:10.5pt;line-height:1.55;margin-top:24px}.yes{text-align:center;font-size:12pt;margin:25px 0}.closing{text-align:center;margin-top:28px}.footer{position:fixed;bottom:-9mm;left:0;right:0;border-top:1px solid #9ba6b2;padding-top:4px;font-size:7.5pt;color:#657181;display:flex;justify-content:space-between}
-      @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+      @page{size:letter;margin:9mm 12mm 9mm}*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-family:Arial,Helvetica,sans-serif;color:#172033;font-size:9.3pt;line-height:1.28;background:#fff}
+      .institution-head{display:grid;grid-template-columns:82px 1fr 82px;align-items:center;border-bottom:1.5px solid #27364c;padding-bottom:6px;margin-bottom:8px}.institution-head img{max-width:66px;max-height:48px;object-fit:contain}.institution-head img:last-child{justify-self:end;max-width:72px}.institution-title{text-align:center}.institution-title strong{display:block;font-size:11.5pt;letter-spacing:.2px}.institution-title span{display:block;font-size:7.4pt;margin-top:2px;color:#536174}.format-code{text-align:right;font-size:6.7pt;line-height:1.15;margin-top:-3px;margin-bottom:6px;color:#333}
+      h1{text-align:center;font-size:12.2pt;margin:12px 0 12px;letter-spacing:.1px}h1.acta-title{font-family:Georgia,serif;font-size:17.5pt;margin:14px 0}.letter-date{text-align:right;margin-bottom:12px}.recipient{margin:12px 0;line-height:1.24}p{text-align:justify;margin:7px 0}.info{display:grid;grid-template-columns:135px 1fr;gap:5px 10px;margin:11px 0}.section-title{font-size:10pt;margin:12px 0 6px}.approval-table{width:100%;border-collapse:collapse;margin:9px 0}.approval-table th,.approval-table td{border:1px solid #b8c1cc;padding:5px;text-align:left}.approval-table th{background:#f2f5f8}
+      .release-note{border-left:3px solid #123f6b;background:#f5f8fb;padding:8px 10px;margin:10px 0 4px}.release-note b,.release-note span{display:block}.release-note span{font-size:8.2pt;margin-top:2px;color:#536174}.signs{display:grid;grid-template-columns:repeat(3,1fr);column-gap:14px;row-gap:22px;margin-top:25px;text-align:center;page-break-inside:avoid;break-inside:avoid}.sign .line{border-top:1px solid #222;height:5px}.sign b,.sign span{display:block;font-size:7.5pt;line-height:1.15}.sign span{margin-top:2px;color:#465365}.director-sign{max-width:300px;margin:10px auto 0}
+      .jury{width:100%;border-collapse:collapse;margin:9px 0 14px}.jury th{font-weight:normal;padding:3px}.jury td{padding:5px 12px}.jury td:first-child{width:62%}.signature-line{display:block;border-bottom:1px solid #333;height:14px}.student-name,.career{text-align:center;text-decoration:underline;font-size:10.7pt;margin:9px 0}.oath{font-size:9.1pt;line-height:1.35;margin-top:10px}.yes{text-align:center;font-size:10.5pt;margin:10px 0}.closing{text-align:center;margin-top:10px;font-size:8.4pt}.footer{margin-top:12px;border-top:1px solid #c8d0d8;padding-top:3px;font-size:6.4pt;color:#657181;display:flex;justify-content:space-between;page-break-inside:avoid}
+      @media print{html,body{width:100%;min-height:0;overflow:visible;-webkit-print-color-adjust:exact;print-color-adjust:exact}.signs,.jury,.release-note{break-inside:avoid;page-break-inside:avoid}}
     </style></head><body><div class="institution-head"><img src="${logoUteq}"><div class="institution-title"><strong>UNIVERSIDAD TECNOLÓGICA DE QUERÉTARO</strong><span>Proceso de Estadías Profesionales · SkillMatch</span></div><img src="${logoSkill}"></div><div class="format-code"><b>${esc(code)}</b><br>Rev. 01<br>Generado: ${esc(fechaLarga)}</div>${body}<div class="footer"><span>Documento generado automáticamente desde el expediente institucional SkillMatch</span><span>Matrícula ${esc(d.matricula || '')}</span></div><script>setTimeout(()=>window.print(),700)<\/script></body></html>`);
     win.document.close();
   }
@@ -478,7 +480,7 @@ export default function FlujoOficialEstadia({ role, mode = 'full' }) {
     admins={admins} carreras={carreras} adminForm={adminForm} setAdminForm={setAdminForm} saveAdmin={saveAdmin} toggleAdmin={toggleAdmin}
     selected={selected} setSelected={setSelected} official={official} setOfficial={setOfficial} saveOfficial={saveOfficial}
     docs={docs} docState={docState} signedDoc={signedDoc} genDoc={genDoc}
-    uploadSigned={uploadSigned} mail={mail} setMail={setMail} prepareMail={prepareMail} mailConfig={mailConfig} authorizeFormalStart={authorizeFormalStart}
+    uploadSigned={uploadSigned} uploadingDoc={uploadingDoc} mail={mail} setMail={setMail} prepareMail={prepareMail} mailConfig={mailConfig} authorizeFormalStart={authorizeFormalStart}
   />;
 }
 
@@ -608,7 +610,7 @@ function professorNextStep(row) {
 }
 
 function BoardView(props) {
-  const { role, mode, board, resolveArea, openOfficial, admins, carreras, adminForm, setAdminForm, saveAdmin, toggleAdmin, selected, setSelected, official, setOfficial, saveOfficial, docs, docState, signedDoc, genDoc, uploadSigned, mail, setMail, prepareMail, mailConfig, authorizeFormalStart } = props;
+  const { role, mode, board, resolveArea, openOfficial, admins, carreras, adminForm, setAdminForm, saveAdmin, toggleAdmin, selected, setSelected, official, setOfficial, saveOfficial, docs, docState, signedDoc, genDoc, uploadSigned, uploadingDoc, mail, setMail, prepareMail, mailConfig, authorizeFormalStart } = props;
   const [search,setSearch]=useState(''); const [group,setGroup]=useState('');
   const scrollRef=useRef(null);
   const groups=[...new Set(board.map(x=>x.grupo_nombre).filter(Boolean))];
@@ -630,7 +632,7 @@ function BoardView(props) {
         <tr className="fo-phase-row"><th colSpan="2">Alumno</th><th colSpan="5">Inicio formal</th><th colSpan="3">Desarrollo académico</th><th colSpan="9">Cierre institucional</th><th colSpan="3">Documentos finales</th><th rowSpan="2">Acción actual</th></tr>
         <tr><th className="sticky-col">Alumno</th><th>Grupo</th><th>Docs inicio</th><th>Expediente</th><th>Carta inicio</th><th>Inicio formal</th><th>Eval. empresa 1</th><th>Talleres</th><th>Eval. empresa 2</th><th>Memoria</th><th>Empresa</th><th>Biblioteca</th><th>Labs</th><th>Dirección</th><th>Vinculación</th><th>Donativo</th><th>Inglés</th><th>Datos título</th><th>Pago título</th><th>Carta final</th><th>Autorización</th><th>Toma</th></tr>
       </thead><tbody>{filtered.map(row => <tr key={row.id_estadia}><td className="sticky-col"><b>{row.nombre} {row.apellido}</b><small>{row.matricula}</small></td><td>{row.grupo_nombre}</td><td><Status value={Number(row.comprobantes_inicio_aprobados)>=2?'aprobado':`${row.comprobantes_inicio_aprobados||0}/2`}/></td><td><Status value={row.datos_oficiales_completos?'aprobado':'pendiente'}/></td><td><MiniDocState value={row.carta_inicio_estado} signed={row.carta_inicio_firmada}/></td><td><Status value={row.inicio_formal?'aprobado':'pendiente'}/></td><td><Status value={row.evaluacion_empresa_inicial}/></td><td><Status value={Number(row.talleres_aprobados)>=3?'aprobado':`${row.talleres_aprobados||0}/3`}/></td><td><Status value={row.evaluacion_empresa_final}/></td><td>{row.memoria_final_ruta?<a href={buildFileUrl(row.memoria_final_ruta)} target="_blank" rel="noreferrer"><Status value="aprobado"/></a>:<Status value="pendiente"/>}</td><td><Status value={row.empresa_memoria}/></td><td><Status value={row.biblioteca}/></td><td><Status value={row.laboratorios}/></td><td><Status value={row.direccion}/></td><td><Status value={row.vinculacion}/></td><td><Status value={row.donativo}/></td><td><Status value={row.ingles}/></td><td><Status value={row.datos_alumno}/></td><td><Status value={row.pago_titulo}/></td><td><MiniDocState value={row.carta_final_estado} signed={row.carta_final_firmada}/></td><td><MiniDocState value={row.autorizacion_memoria_estado} signed={row.autorizacion_memoria_firmada}/></td><td><Status value={row.toma_estado}/></td><td><div className="fo-actions fo-current-action">{role===4&&<button className="fo-primary" onClick={()=>openOfficial(row)}>{professorNextStep(row)}</button>}{role===1&&row.direccion_id&&row.empresa_memoria==='aprobado'&&row.direccion!=='aprobado'&&<><a className="fo-link" href={row.memoria_final_ruta?buildFileUrl(row.memoria_final_ruta):'#'} target="_blank" rel="noreferrer">Ver memoria</a><button onClick={()=>resolveArea(row.direccion_id,'direccion')}>Aprobar Dirección</button></>}{role===5&&row.vinculacion_id&&row.empresa_memoria==='aprobado'&&row.vinculacion!=='aprobado'&&<><a className="fo-link" href={row.memoria_final_ruta?buildFileUrl(row.memoria_final_ruta):'#'} target="_blank" rel="noreferrer">Ver memoria</a><button onClick={()=>resolveArea(row.vinculacion_id,'vinculacion')}>Aprobar Vinculación</button></>}{role===10&&<span className="fo-muted-action">{professorNextStep(row)}</span>}</div></td></tr>)}</tbody></table></div></div>
-    {selected && official && <OfficialModal selected={selected} setSelected={setSelected} official={official} setOfficial={setOfficial} saveOfficial={saveOfficial} docState={docState} signedDoc={signedDoc} genDoc={genDoc} uploadSigned={uploadSigned} setMail={setMail} authorizeFormalStart={authorizeFormalStart} />}
+    {selected && official && <OfficialModal selected={selected} setSelected={setSelected} official={official} setOfficial={setOfficial} saveOfficial={saveOfficial} docState={docState} signedDoc={signedDoc} genDoc={genDoc} uploadSigned={uploadSigned} uploadingDoc={uploadingDoc} setMail={setMail} authorizeFormalStart={authorizeFormalStart} />}
     {mail && <MailModal mail={mail} setMail={setMail} prepareMail={prepareMail} mailConfig={mailConfig} />}
   </div>;
 }
@@ -639,7 +641,7 @@ function AdminManager({ admins, carreras, form, setForm, save, toggle }) {
   return <div className="fo-card"><div className="fo-card-title"><div><small>SÚPER ADMINISTRADOR</small><h3>Administradores de estadía</h3></div></div><form className="fo-form" onSubmit={save}><Field label="Nombre"><input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} required /></Field><Field label="Apellido"><input value={form.apellido} onChange={e => setForm({ ...form, apellido: e.target.value })} required /></Field><Field label="Correo institucional"><input type="email" value={form.correo} onChange={e => setForm({ ...form, correo: e.target.value })} required /></Field><Field label="Contraseña inicial"><input value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></Field><Field label="Carrera asignada"><select value={form.id_carrera} onChange={e => setForm({ ...form, id_carrera: e.target.value, area_institucional: carreras.find(c => String(c.id_carrera) === String(e.target.value))?.nombre || '' })} required><option value="">Selecciona</option>{carreras.map(c => <option key={c.id_carrera} value={c.id_carrera}>{c.nombre}</option>)}</select></Field><Field label="Teléfono"><input value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} /></Field><button className="fo-primary">Crear administrador</button></form><div className="fo-table-wrap" style={{ marginTop: 18 }}><table className="fo-table"><thead><tr><th>Administrador</th><th>Carrera</th><th>Cargo</th><th>Estado</th><th></th></tr></thead><tbody>{admins.map(item => <tr key={item.id_usuario}><td><b>{item.nombre} {item.apellido}</b><small>{item.correo}</small></td><td>{item.carrera || 'Todas'}</td><td>{item.cargo_institucional || 'Administrador de Estadías'}</td><td><Status value={item.activo ? 'activo' : 'inactivo'} /></td><td><button className="fo-link" onClick={() => toggle(item)}>{item.activo ? 'Desactivar' : 'Activar'}</button></td></tr>)}</tbody></table></div></div>;
 }
 
-function OfficialModal({ selected, setSelected, official, setOfficial, saveOfficial, docState, signedDoc, genDoc, uploadSigned, setMail, authorizeFormalStart }) {
+function OfficialModal({ selected, setSelected, official, setOfficial, saveOfficial, docState, signedDoc, genDoc, uploadSigned, uploadingDoc, setMail, authorizeFormalStart }) {
   const closureAreas=['empresa_memoria','biblioteca','laboratorios','direccion','vinculacion','donativo','ingles','datos_alumno','pago_titulo'];
   const closureReady=closureAreas.every(k=>selected[k]==='aprobado');
   const allowedDocs=[
@@ -657,7 +659,7 @@ function OfficialModal({ selected, setSelected, official, setOfficial, saveOffic
     <div className="fo-actions end"><button className="fo-primary" onClick={saveOfficial}>Guardar expediente oficial</button>{selected.carta_inicio_firmada&&!selected.inicio_formal&&<button onClick={authorizeFormalStart}>Autorizar inicio formal</button>}</div>
     <section className="fo-documents"><h3>Documentos oficiales</h3><p>Los documentos aparecen cuando corresponde en el flujo. SkillMatch conserva el generado y la versión firmada.</p>{allowedDocs.map(([tipo,nombre,allowed])=>{
       const state=docState(tipo); const generated=state!=='no_generado'; const signed=signedDoc(tipo);
-      return <div className={`fo-document-row ${!allowed?'locked':''}`} key={tipo}><div><strong>{nombre}</strong>{allowed?<Status value={state}/>:<Status value="bloqueado"/>}{signed&&<a href={buildFileUrl(signed)} target="_blank" rel="noreferrer">Ver firmado</a>}{!allowed&&<small>{tipo==='carta_inicio'?'Completa primero el expediente oficial.':tipo==='carta_finalizacion'||tipo==='autorizacion_memoria'?'Se libera cuando todas las validaciones de cierre estén aprobadas.':tipo==='acta_toma_protesta'?'Se libera cuando exista una toma de protesta confirmada.':'Se libera al terminar la estadía.'}</small>}</div><div className="fo-actions">{allowed&&<button onClick={()=>genDoc(tipo)}>{generated?'Ver / imprimir':'Generar / imprimir'}</button>}{allowed&&generated&&<button onClick={()=>setMail({tipo:'ENVIO_DOCUMENTO',para:official.contacto_carta_correo||official.asesor_org_correo||'',cc:official.alumno_correo||'',asunto:`${nombre} - ${official.alumno_nombre} ${official.alumno_apellido}`,mensaje:'Se comparte el documento generado desde SkillMatch.',documento:tipo})}>Enviar por correo</button>}{allowed&&generated&&!signed&&<label className="fo-small-upload">Subir firmado<input type="file" accept="application/pdf,image/*" onChange={e=>uploadSigned(tipo,e.target.files?.[0])}/></label>}</div></div>;
+      return <div className={`fo-document-row ${!allowed?'locked':''}`} key={tipo}><div><strong>{nombre}</strong>{allowed?<Status value={state}/>:<Status value="bloqueado"/>}{signed&&<a href={buildFileUrl(signed)} target="_blank" rel="noreferrer">Ver firmado</a>}{!allowed&&<small>{tipo==='carta_inicio'?'Completa primero el expediente oficial.':tipo==='carta_finalizacion'||tipo==='autorizacion_memoria'?'Se libera cuando todas las validaciones de cierre estén aprobadas.':tipo==='acta_toma_protesta'?'Se libera cuando exista una toma de protesta confirmada.':'Se libera al terminar la estadía.'}</small>}</div><div className="fo-actions">{allowed&&<button onClick={()=>genDoc(tipo)}>{generated?'Ver / imprimir':'Generar / imprimir'}</button>}{allowed&&generated&&<button onClick={()=>setMail({tipo:'ENVIO_DOCUMENTO',para:official.contacto_carta_correo||official.asesor_org_correo||'',cc:official.alumno_correo||'',asunto:`${nombre} - ${official.alumno_nombre} ${official.alumno_apellido}`,mensaje:'Se comparte el documento generado desde SkillMatch.',documento:tipo})}>Enviar por correo</button>}{allowed&&generated&&!signed&&<label className={`fo-small-upload ${uploadingDoc===tipo?'is-uploading':''}`}>{uploadingDoc===tipo?'Subiendo documento…':'Subir firmado'}<input type="file" accept="application/pdf,image/*" disabled={Boolean(uploadingDoc)} onChange={e=>uploadSigned(tipo,e.target.files?.[0])}/></label>}</div></div>;
     })}</section>
   </div></div></div>;
 }
