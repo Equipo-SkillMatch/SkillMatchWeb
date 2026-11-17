@@ -245,8 +245,9 @@ export default function FlujoOficialEstadia({ role, mode = 'full' }) {
     const fd = new FormData();
     fd.append('archivo', file);
     try {
-      await api('/cierre/pago-titulo', { method: 'POST', body: fd });
-      toast('Pago de título enviado a Servicios Escolares.');
+      const result = await api('/cierre/pago-titulo', { method: 'POST', body: fd });
+      toast(result.mensaje || 'Pago de título enviado a Servicios Escolares.');
+      await load();
     } catch (error) { toast(error.message, 'error'); }
   }
 
@@ -533,10 +534,32 @@ function StudentView(props) {
           <DocUploadCard tipo="inscripcion" nombre="Inscripción / pago de cuatrimestre" comps={comps} uploadComp={uploadComp} />
           <DocUploadCard tipo="seguro_facultativo" nombre="Comprobante de seguro facultativo" comps={comps} uploadComp={uploadComp} />
         </div></div>
-        {flowRow?.empresa_memoria === 'aprobado' && <div className="fo-card"><div className="fo-card-title"><div><small>CIERRE · TITULACIÓN</small><h3>Datos y pago de título</h3></div></div><div className="fo-doc-grid"><div className="fo-doc"><strong>Visto bueno de datos personales</strong><p>Revisa primero todos los datos que se usarán en tus documentos de titulación. Podrás corregirlos antes de confirmar.</p><button className="fo-primary" onClick={openTitleData}>{flowRow?.datos_alumno==='aprobado'?'Ver datos confirmados':'Revisar mis datos'}</button></div><div className="fo-doc"><strong>Pago de título</strong><p>El botón solo debe usarse dentro del periodo habilitado por Servicios Escolares.</p><label className="fo-upload">Subir comprobante<input type="file" accept="application/pdf,image/*" onChange={e => uploadTitlePayment(e.target.files?.[0])} /></label></div></div></div>}
+        {flowRow?.empresa_memoria === 'aprobado' && <div className="fo-card"><div className="fo-card-title"><div><small>CIERRE · TITULACIÓN</small><h3>Datos y pago de título</h3></div></div><div className="fo-doc-grid"><div className="fo-doc"><strong>Visto bueno de datos personales</strong><p>Revisa primero todos los datos que se usarán en tus documentos de titulación. Podrás corregirlos antes de confirmar.</p><button className="fo-primary" onClick={openTitleData}>{flowRow?.datos_alumno==='aprobado'?'Ver datos confirmados':'Revisar mis datos'}</button></div><TitlePaymentCard estado={flowRow?.pago_titulo} uploadTitlePayment={uploadTitlePayment} /></div></div>}
       </>}
     </>}
     {showTitleData && titleData && <TitleDataModal data={titleData} setData={setTitleData} editing={titleEditing} setEditing={setTitleEditing} save={saveTitleData} confirm={confirmTitleData} close={()=>setShowTitleData(false)} />}
+  </div>;
+}
+
+function TitlePaymentCard({ estado, uploadTitlePayment }) {
+  const value=String(estado||'pendiente').toLowerCase();
+  const waiting=value==='en_revision';
+  const approved=value==='aprobado';
+  const correction=['rechazado','requiere_correccion'].includes(value);
+  return <div className="fo-doc">
+    <strong>Pago de título</strong>
+    {approved ? <>
+      <Status value="aprobado" />
+      <p>Tu comprobante fue aprobado por Servicios Escolares. No necesitas realizar otra carga.</p>
+    </> : waiting ? <>
+      <Status value="en_revision" />
+      <p>✓ Comprobante subido correctamente. Está en espera de revisión por Servicios Escolares.</p>
+      <div className="fo-upload-locked">En espera de respuesta de Servicios Escolares</div>
+    </> : <>
+      <Status value={correction?value:'pendiente'} />
+      <p>{correction?'Servicios Escolares solicitó una corrección. Puedes subir un nuevo comprobante.':'El comprobante solo puede enviarse durante el periodo habilitado por Servicios Escolares.'}</p>
+      <label className="fo-upload">{correction?'Subir corrección':'Subir comprobante'}<input type="file" accept="application/pdf,image/*" onChange={e => uploadTitlePayment(e.target.files?.[0])} /></label>
+    </>}
   </div>;
 }
 

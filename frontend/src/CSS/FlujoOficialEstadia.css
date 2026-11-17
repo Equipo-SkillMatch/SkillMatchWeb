@@ -40,3 +40,15 @@
 
 @media(max-width:900px){.fo-table-navigation{align-items:flex-start;flex-direction:column}.fo-current-stage-card{align-items:flex-start;flex-direction:column}.fo-stage-hint{max-width:none;width:100%}.fo-title-data-row{grid-template-columns:1fr;gap:6px}}
 .fo-table.blue .fo-phase-row th{position:static!important;left:auto!important;box-shadow:none!important;background:#0b3156!important}
+
+/* V9.4 · Pago de título: el alumno no debe poder reenviar mientras está en revisión. */
+.fo-upload-locked {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 700;
+  text-align: center;
+}

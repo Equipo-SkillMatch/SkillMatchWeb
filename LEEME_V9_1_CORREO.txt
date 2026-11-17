@@ -1,9 +1,0 @@
-SKILLMATCH V9.1 - INTEGRACION DE CORREO PREPARADA
-
-1) No hay migracion nueva.
-2) Sustituye los archivos del proyecto y despliega backend/frontend.
-3) Deja MAIL_PROVIDER=disabled mientras realizas pruebas.
-4) En las pantallas de documentos, "Enviar por correo" guardara el mensaje en cola.
-5) Cuando quieras activar envios, configura en Render uno de: resend, gmail o smtp.
-6) Con proveedor configurado el modal mostrara "Configurado" y el boton enviara el correo.
-7) Los eventos automaticos existentes pueden procesarse desde la cola sin volver a capturar destinatarios.

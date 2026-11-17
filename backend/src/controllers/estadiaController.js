@@ -2221,18 +2221,39 @@ exports.tableroOficialEstadias = async (req,res) => {
 exports.obtenerDatosTituloAlumno = async (req,res) => {
   if(!requireRoles(req,res,[2])) return;
   try{
-    const [e]=await db.query(`SELECT e.id_estadia,u.nombre,u.apellido,es.matricula,COALESCE(c.nombre,es.carrera) carrera,
-      EXTRACT(YEAR FROM COALESCE(es.fecha_inicio_carrera,u.fecha_registro::date))::INTEGER anio_inicio,
-      EXTRACT(YEAR FROM COALESCE(e.fecha_fin,p.fecha_fin))::INTEGER anio_finalizacion
-      FROM estadias e JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
-      JOIN periodos_estadia p ON p.id_periodo=e.id_periodo LEFT JOIN grupos_estadia g ON g.id_grupo=e.id_grupo LEFT JOIN carreras c ON c.id_carrera=g.id_carrera
+    // La consulta usa únicamente columnas base que existen desde el alta original
+    // de alumnos/estadías. Los años se calculan en JS para evitar errores por
+    // diferencias históricas de esquema en instalaciones actualizadas por etapas.
+    const [rowsBase]=await db.query(`SELECT e.id_estadia,e.fecha_inicio,e.fecha_fin,p.fecha_inicio AS periodo_inicio,p.fecha_fin AS periodo_fin,
+      u.nombre,u.apellido,u.fecha_registro,es.matricula,es.carrera,es.fecha_inicio_carrera,COALESCE(c.nombre,es.carrera,'Carrera por definir') AS carrera_nombre
+      FROM estadias e
+      JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
+      JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
+      LEFT JOIN grupos_estadia g ON g.id_grupo=e.id_grupo
+      LEFT JOIN carreras c ON c.id_carrera=g.id_carrera
       WHERE e.id_estudiante=? ORDER BY e.creada_en DESC LIMIT 1`,[req.usuario.id_usuario]);
-    if(!e.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
+    if(!rowsBase.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
+
+    const base=rowsBase[0];
+    const yearOf=(value,fallback)=>{
+      const d=value?new Date(value):null;
+      const y=d && !Number.isNaN(d.getTime()) ? d.getFullYear() : null;
+      return y || fallback;
+    };
+    const currentYear=new Date().getFullYear();
+    const anioInicio=yearOf(base.fecha_inicio_carrera,yearOf(base.fecha_registro,currentYear));
+    const anioFinalizacion=yearOf(base.fecha_fin,yearOf(base.periodo_fin,Math.max(anioInicio,currentYear)));
+
     await db.query(`INSERT INTO datos_titulacion_estadia(id_estadia,nombre,apellido,matricula,carrera,anio_inicio,anio_finalizacion)
-      VALUES(?,?,?,?,?,?,?) ON CONFLICT(id_estadia) DO NOTHING`,[e[0].id_estadia,e[0].nombre,e[0].apellido,e[0].matricula,e[0].carrera,e[0].anio_inicio,e[0].anio_finalizacion]);
-    const [rows]=await db.query('SELECT * FROM datos_titulacion_estadia WHERE id_estadia=?',[e[0].id_estadia]);
-    res.json({ok:true,datos:rows[0]});
-  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar tus datos para titulación.'});}
+      VALUES(?,?,?,?,?,?,?) ON CONFLICT(id_estadia) DO NOTHING`,
+      [base.id_estadia,base.nombre,base.apellido,base.matricula,base.carrera_nombre||base.carrera||'Carrera por definir',anioInicio,anioFinalizacion]);
+    const [datos]=await db.query('SELECT * FROM datos_titulacion_estadia WHERE id_estadia=?',[base.id_estadia]);
+    res.json({ok:true,datos:datos[0]||null});
+  }catch(error){
+    console.error('obtenerDatosTituloAlumno:',error);
+    res.status(500).json({ok:false,mensaje:'No se pudieron cargar tus datos para titulación. Verifica que la migración de datos de titulación esté aplicada.'});
+  }
 };
 
 exports.actualizarDatosTituloAlumno = async (req,res) => {
