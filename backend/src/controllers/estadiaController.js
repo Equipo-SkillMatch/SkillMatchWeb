@@ -20,32 +20,35 @@ function folioExpediente(idEstadia) {
 }
 
 async function recalcularExpediente(idEstadia) {
-  const [seg] = await db.query("SELECT estado FROM seguros_facultativos WHERE id_estadia=?", [idEstadia]);
+  const [docsInicio] = await db.query("SELECT tipo,estado FROM comprobantes_inicio_estadia WHERE id_estadia=? AND tipo IN ('inscripcion','seguro_facultativo')", [idEstadia]);
   const [av] = await db.query("SELECT COUNT(DISTINCT fa.numero_avance) aprobados FROM entregas_avances_estadia ea JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance WHERE ea.id_estadia=? AND ea.estado='aprobado'", [idEstadia]);
   const [mem] = await db.query("SELECT memoria_final_ruta,empresa_razon_social,proyecto_titulo FROM estadias WHERE id_estadia=?", [idEstadia]);
   let inicio=[], empresaEval=[];
   try {[inicio] = await db.query("SELECT autorizado FROM inicio_formal_estadia WHERE id_estadia=?", [idEstadia]);} catch(_e) {}
   try {[empresaEval] = await db.query("SELECT momento,respondida_en FROM evaluaciones_empresa_estadia WHERE id_estadia=?", [idEstadia]);} catch(_e) {}
-  let porcentaje = (mem[0]?.empresa_razon_social && mem[0]?.proyecto_titulo) ? 10 : 0;
-  if (inicio[0]?.autorizado) porcentaje += 10;
-  if (seg[0]?.estado === 'validado') porcentaje += 15;
-  porcentaje += Math.min(3, Number(av[0]?.aprobados || 0)) * 15;
-  if (empresaEval.some(e=>e.momento==='inicial' && e.respondida_en)) porcentaje += 5;
-  if (empresaEval.some(e=>e.momento==='final' && e.respondida_en)) porcentaje += 5;
-  if (mem[0]?.memoria_final_ruta) porcentaje += 10;
-  // V8: el expediente académico representa 70% del cierre total. Las cinco
-  // liberaciones institucionales aportan 20% y la toma de protesta 10%.
-  const baseAcademica = Math.min(100, porcentaje);
+
+  const inicioOk = Boolean(inicio[0]?.autorizado);
+  const inscripcionOk = docsInicio.some(d=>d.tipo==='inscripcion' && d.estado==='aprobado');
+  const seguroOk = docsInicio.some(d=>d.tipo==='seguro_facultativo' && d.estado==='aprobado');
+  const talleresOk = Math.min(3, Number(av[0]?.aprobados || 0));
+  const evalInicialOk = empresaEval.some(e=>e.momento==='inicial' && e.respondida_en);
+  const evalFinalOk = empresaEval.some(e=>e.momento==='final' && e.respondida_en);
+  const memoriaOk = Boolean(mem[0]?.memoria_final_ruta);
+  const expedienteBase = Boolean(mem[0]?.empresa_razon_social && mem[0]?.proyecto_titulo);
+
+  // Una sola escala de avance V9.2: 8 hitos académicos + 9 validaciones oficiales + toma.
+  let hitos = [expedienteBase,inicioOk,inscripcionOk,seguroOk,evalInicialOk,evalFinalOk,memoriaOk].filter(Boolean).length + talleresOk;
   let validacionesAprobadas=0,tomaAprobada=false;
   try{
-    const [v8v]=await db.query("SELECT COUNT(*) total FROM validaciones_cierre_estadia WHERE id_estadia=? AND estado='aprobado'",[idEstadia]);
-    validacionesAprobadas=Math.min(5,Number(v8v[0]?.total||0));
-    const [v8t]=await db.query("SELECT estado FROM tomas_protesta WHERE id_estadia=? LIMIT 1",[idEstadia]);
-    tomaAprobada=v8t[0]?.estado==='aprobada';
+    const required=['empresa_memoria','biblioteca','laboratorios','centro_idiomas','servicios_escolares','direccion','vinculacion','datos_alumno','pago_titulo'];
+    const [vals]=await db.query("SELECT area,estado FROM validaciones_cierre_estadia WHERE id_estadia=?",[idEstadia]);
+    validacionesAprobadas=required.filter(a=>vals.some(v=>v.area===a&&v.estado==='aprobado')).length;
+    const [tp]=await db.query("SELECT estado FROM tomas_protesta WHERE id_estadia=? LIMIT 1",[idEstadia]);
+    tomaAprobada=tp[0]?.estado==='aprobada';
   }catch(_e){}
-  porcentaje=Math.round(baseAcademica*0.70)+(validacionesAprobadas*4)+(tomaAprobada?10:0);
-  porcentaje=Math.min(100,porcentaje);
-  const estado = tomaAprobada ? 'cerrado' : (porcentaje>=70 ? 'en_cierre' : 'incompleto');
+  const totalHitos=10+9+1; // expediente + inicio + 2 docs + 3 talleres + 2 evaluaciones + memoria + 9 validaciones + toma
+  const porcentaje=Math.min(100,Math.round(((hitos+validacionesAprobadas+(tomaAprobada?1:0))/totalHitos)*100));
+  const estado = tomaAprobada ? 'cerrado' : (validacionesAprobadas>0 ? 'en_cierre' : 'incompleto');
   await db.query('UPDATE expedientes_estadia SET porcentaje_completo=?, estado=?, actualizado_en=CURRENT_TIMESTAMP WHERE id_estadia=?', [porcentaje, estado, idEstadia]);
   return porcentaje;
 }
@@ -75,7 +78,7 @@ exports.resumen = async (req, res) => {
         JOIN grupos_estadia g ON g.id_grupo=e.id_grupo
         JOIN usuarios u ON u.id_usuario=e.id_profesor
         LEFT JOIN expedientes_estadia ex ON ex.id_estadia=e.id_estadia
-        LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia
+        LEFT JOIN LATERAL (SELECT estado FROM comprobantes_inicio_estadia c WHERE c.id_estadia=e.id_estadia AND c.tipo='seguro_facultativo' ORDER BY c.id_comprobante DESC LIMIT 1) s ON TRUE
         WHERE e.id_estudiante=? ORDER BY e.creada_en DESC LIMIT 1`, [estudiante.id_estudiante]);
       return res.json({ ok: true, estadia: rows[0] || null });
     }
@@ -90,7 +93,7 @@ exports.resumen = async (req, res) => {
     const [stats] = await db.query(`SELECT
       (SELECT COUNT(*) FROM periodos_estadia WHERE activo=TRUE) AS periodos_activos,
       (SELECT COUNT(*) FROM estadias) AS estadias,
-      (SELECT COUNT(*) FROM seguros_facultativos WHERE estado IN ('pendiente','en_revision')) AS seguros_pendientes,
+      (SELECT COUNT(*) FROM comprobantes_inicio_estadia WHERE tipo='seguro_facultativo' AND estado IN ('pendiente','en_revision')) AS seguros_pendientes,
       (SELECT COUNT(*) FROM entregas_avances_estadia WHERE estado IN ('entregado','en_revision')) AS avances_pendientes`);
     return res.json({ ok: true, stats: stats[0] || {} });
   } catch (error) {
@@ -107,14 +110,14 @@ exports.listarPeriodos = async (_req, res) => {
 };
 
 exports.crearPeriodo = async (req, res) => {
-  if (!requireRoles(req, res, [1])) return;
-  const { nombre, clave, fecha_inicio, fecha_fin, fecha_limite_registro_empresa, fecha_limite_seguro, instrucciones, monto_donativo } = req.body;
+  if (!requireRoles(req, res, [1,6])) return;
+  const { nombre, clave, fecha_inicio, fecha_fin, fecha_limite_registro_empresa, fecha_limite_seguro, instrucciones, monto_donativo, fecha_inicio_donativo, fecha_fin_donativo, fecha_inicio_pago_titulo, fecha_fin_pago_titulo } = req.body;
   if (!nombre || !clave || !fecha_inicio || !fecha_fin) return res.status(400).json({ ok:false, mensaje:'Nombre, clave, inicio y fin de estadía son obligatorios.' });
   if (new Date(fecha_fin) < new Date(fecha_inicio)) return res.status(400).json({ok:false,mensaje:'La fecha de fin de estadía no puede ser anterior a la fecha de inicio.'});
   try {
     const [result] = await db.query(`INSERT INTO periodos_estadia
-      (nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,monto_donativo,creado_por)
-      VALUES (?,?,?,?,?,?,?,?,?)`, [nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa||null,fecha_limite_seguro||null,instrucciones||null,Number(monto_donativo||0),req.usuario.id_usuario]);
+      (nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,monto_donativo,fecha_inicio_donativo,fecha_fin_donativo,fecha_inicio_pago_titulo,fecha_fin_pago_titulo,creado_por)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, [nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa||null,fecha_limite_seguro||null,instrucciones||null,Number(monto_donativo||0),fecha_inicio_donativo||null,fecha_fin_donativo||null,fecha_inicio_pago_titulo||null,fecha_fin_pago_titulo||null,req.usuario.id_usuario]);
     res.status(201).json({ ok:true, id_periodo: result.insertId });
   } catch (e) { res.status(500).json({ ok:false, mensaje:e.code==='23505'?'La clave del periodo ya existe.':'No se pudo crear el periodo.' }); }
 };
@@ -178,7 +181,8 @@ exports.listarGrupos = async (req,res) => {
     const r=role(req);
     if (r===4) { where='WHERE g.id_profesor=?'; params=[req.usuario.id_usuario]; }
     else if (r===2) { where='WHERE EXISTS (SELECT 1 FROM grupo_estudiantes_estadia ge WHERE ge.id_grupo=g.id_grupo AND ge.id_estudiante=?)'; params=[req.usuario.id_usuario]; }
-    else if (![1,6,10].includes(r)) return res.status(403).json({ok:false,mensaje:'No tienes acceso a grupos de estadía.'});
+    else if (r===10) { where='WHERE EXISTS (SELECT 1 FROM administradores_estadia ae WHERE ae.id_usuario=? AND ae.activo=TRUE AND (ae.id_carrera IS NULL OR ae.id_carrera=g.id_carrera))'; params=[req.usuario.id_usuario]; }
+    else if (![1,6].includes(r)) return res.status(403).json({ok:false,mensaje:'No tienes acceso a grupos de estadía.'});
     const [rows] = await db.query(`SELECT g.*,p.nombre periodo_nombre, CONCAT(u.nombre,' ',u.apellido) profesor_nombre,
       (SELECT COUNT(*) FROM grupo_estudiantes_estadia ge WHERE ge.id_grupo=g.id_grupo) alumnos
       FROM grupos_estadia g JOIN periodos_estadia p ON p.id_periodo=g.id_periodo JOIN usuarios u ON u.id_usuario=g.id_profesor ${where}
@@ -190,12 +194,23 @@ exports.listarGrupos = async (req,res) => {
 exports.crearGrupo = async (req,res) => {
   if (!requireRoles(req,res,[1,10])) return;
   const {id_periodo,nombre,carrera,id_profesor}=req.body;
-  try { const [r]=await db.query('INSERT INTO grupos_estadia (id_periodo,nombre,carrera,id_profesor) VALUES (?,?,?,?)',[id_periodo,nombre,carrera||null,id_profesor]); res.status(201).json({ok:true,id_grupo:r.insertId}); }
+  try {
+    let idCarrera=null;
+    if(role(req)===10){
+      const [prof]=await db.query('SELECT id_carrera FROM profesores WHERE id_profesor=?',[id_profesor]);
+      if(!prof.length || !(await administradorPuedeCarrera(req,prof[0].id_carrera))) return res.status(403).json({ok:false,mensaje:'Solo puedes crear grupos con profesores de tu carrera.'});
+      idCarrera=prof[0].id_carrera;
+    }
+    const [r]=await db.query('INSERT INTO grupos_estadia (id_periodo,nombre,carrera,id_profesor,id_carrera) VALUES (?,?,?,?,?)',[id_periodo,nombre,carrera||null,id_profesor,idCarrera]); res.status(201).json({ok:true,id_grupo:r.insertId}); }
   catch(e){res.status(500).json({ok:false,mensaje:'No se pudo crear el grupo.'});}
 };
 exports.asignarAlumnoGrupo = async (req,res) => {
   if (!requireRoles(req,res,[1,10])) return;
-  try { await db.query('INSERT INTO grupo_estudiantes_estadia (id_grupo,id_estudiante) VALUES (?,?) ON CONFLICT (id_grupo,id_estudiante) DO NOTHING',[req.params.id,req.body.id_estudiante]); res.json({ok:true}); }
+  try {
+    const [g]=await db.query('SELECT id_carrera FROM grupos_estadia WHERE id_grupo=?',[req.params.id]);
+    if(!g.length) return res.status(404).json({ok:false,mensaje:'Grupo no encontrado.'});
+    if(!(await administradorPuedeCarrera(req,g[0].id_carrera))) return res.status(403).json({ok:false,mensaje:'Este grupo pertenece a otra carrera.'});
+    await db.query('INSERT INTO grupo_estudiantes_estadia (id_grupo,id_estudiante) VALUES (?,?) ON CONFLICT (id_grupo,id_estudiante) DO NOTHING',[req.params.id,req.body.id_estudiante]); res.json({ok:true}); }
   catch(e){res.status(500).json({ok:false,mensaje:'No se pudo asignar el alumno.'});}
 };
 exports.alumnosGrupo = async (req,res) => {
@@ -206,11 +221,15 @@ exports.alumnosGrupo = async (req,res) => {
       const [own]=await db.query('SELECT id_grupo FROM grupos_estadia WHERE id_grupo=? AND id_profesor=?',[req.params.id,req.usuario.id_usuario]);
       if(!own.length) return res.status(403).json({ok:false,mensaje:'Este grupo no está asignado a tu cuenta.'});
     }
+    if (r===10) {
+      const [g]=await db.query('SELECT id_carrera FROM grupos_estadia WHERE id_grupo=?',[req.params.id]);
+      if(!g.length || !(await administradorPuedeCarrera(req,g[0].id_carrera))) return res.status(403).json({ok:false,mensaje:'Este grupo pertenece a otra carrera.'});
+    }
     const [rows]=await db.query(`SELECT ge.id_grupo,e.id_estudiante,e.matricula,u.nombre,u.apellido,u.correo,
-      es.id_estadia,es.estado AS estado_estadia,ex.folio AS expediente_folio,s.estado AS seguro_estado
+      es.id_estadia,es.estado AS estado_estadia,ex.folio AS expediente_folio,ci.estado AS seguro_estado
       FROM grupo_estudiantes_estadia ge JOIN estudiantes e ON e.id_estudiante=ge.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
       LEFT JOIN estadias es ON es.id_grupo=ge.id_grupo AND es.id_estudiante=e.id_estudiante
-      LEFT JOIN expedientes_estadia ex ON ex.id_estadia=es.id_estadia LEFT JOIN seguros_facultativos s ON s.id_estadia=es.id_estadia
+      LEFT JOIN expedientes_estadia ex ON ex.id_estadia=es.id_estadia LEFT JOIN comprobantes_inicio_estadia ci ON ci.id_estadia=es.id_estadia AND ci.tipo='seguro_facultativo'
       WHERE ge.id_grupo=? ORDER BY u.apellido,u.nombre`,[req.params.id]);
     res.json({ok:true,alumnos:rows});
   } catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los alumnos.'});}
@@ -295,9 +314,18 @@ exports.obtenerMiEstadia = async (req,res) => {
   if (!requireRoles(req,res,[2])) return;
   try {
     const [rows]=await db.query(`SELECT e.*,p.nombre periodo_nombre,g.nombre grupo_nombre,CONCAT(u.nombre,' ',u.apellido) profesor_nombre,ex.folio expediente_folio,ex.estado expediente_estado,ex.porcentaje_completo,
-      s.id_seguro,s.estado seguro_estado,s.observaciones seguro_observaciones,s.ruta_comprobante,s.nombre_original seguro_archivo,
-      s.numero_seguro,s.folio_pago,s.fecha_pago,s.vigencia_inicio,s.vigencia_fin,s.monto
-      FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN usuarios u ON u.id_usuario=e.id_profesor LEFT JOIN expedientes_estadia ex ON ex.id_estadia=e.id_estadia LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia WHERE e.id_estudiante=? ORDER BY e.creada_en DESC LIMIT 1`,[req.usuario.id_usuario]);
+      ci.id_comprobante id_seguro,ci.estado seguro_estado,ci.observaciones seguro_observaciones,ci.ruta_archivo ruta_comprobante,ci.nombre_archivo seguro_archivo,
+      es.numero_seguro_social numero_seguro,
+      COALESCE((SELECT autorizado FROM inicio_formal_estadia i WHERE i.id_estadia=e.id_estadia),FALSE) inicio_formal_autorizado,
+      COALESCE((SELECT estado FROM validaciones_cierre_estadia v WHERE v.id_estadia=e.id_estadia AND v.area='empresa_memoria'),'pendiente') empresa_memoria_estado,
+      COALESCE((SELECT estado FROM validaciones_cierre_estadia v WHERE v.id_estadia=e.id_estadia AND v.area='centro_idiomas'),'pendiente') ingles_estado,
+      COALESCE((SELECT estado FROM validaciones_cierre_estadia v WHERE v.id_estadia=e.id_estadia AND v.area='servicios_escolares'),'pendiente') donativo_estado,
+      COALESCE((SELECT BOOL_OR(v.estado IN ('rechazado','requiere_correccion')) FROM validaciones_cierre_estadia v
+        WHERE v.id_estadia=e.id_estadia AND v.area IN ('empresa_memoria','biblioteca','laboratorios','direccion','vinculacion')),FALSE) memoria_puede_reemplazar
+      FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN usuarios u ON u.id_usuario=e.id_profesor
+      JOIN estudiantes es ON es.id_estudiante=e.id_estudiante LEFT JOIN expedientes_estadia ex ON ex.id_estadia=e.id_estadia
+      LEFT JOIN comprobantes_inicio_estadia ci ON ci.id_estadia=e.id_estadia AND ci.tipo='seguro_facultativo'
+      WHERE e.id_estudiante=? ORDER BY e.creada_en DESC LIMIT 1`,[req.usuario.id_usuario]);
     if(!rows.length) return res.json({ok:true,estadia:null});
     const estadia=rows[0];
     const [fechas]=await db.query('SELECT * FROM fechas_avances_estadia WHERE id_grupo=? ORDER BY numero_avance',[estadia.id_grupo]);
@@ -399,8 +427,19 @@ exports.revisarEntrega = async (req,res) => {
 
 exports.listarExpedientes = async (req,res) => {
   if(!requireRoles(req,res,[1,6,10])) return;
-  try { const [rows]=await db.query(`SELECT ex.*,e.id_estadia,e.id_estudiante,e.proyecto_titulo,e.empresa_razon_social,e.estado estado_estadia,es.matricula,u.nombre,u.apellido,u.correo,p.nombre periodo_nombre,s.estado seguro_estado,g.nombre grupo_nombre,CONCAT(up.nombre,' ',up.apellido) profesor_nombre FROM expedientes_estadia ex JOIN estadias e ON e.id_estadia=ex.id_estadia JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN periodos_estadia p ON p.id_periodo=e.id_periodo JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN usuarios up ON up.id_usuario=e.id_profesor LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia ORDER BY ex.creado_en DESC`); res.json({ok:true,expedientes:rows}); }
-  catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los expedientes.'});}
+  try {
+    const params=[]; let filtro='';
+    if(role(req)===10){
+      filtro=`WHERE EXISTS (SELECT 1 FROM administradores_estadia ae WHERE ae.id_usuario=? AND ae.activo=TRUE AND (ae.id_carrera IS NULL OR ae.id_carrera=g.id_carrera))`;
+      params.push(req.usuario.id_usuario);
+    }
+    const [rows]=await db.query(`SELECT ex.*,e.id_estadia,e.id_estudiante,e.proyecto_titulo,e.empresa_razon_social,e.estado estado_estadia,es.matricula,u.nombre,u.apellido,u.correo,p.nombre periodo_nombre,
+      COALESCE((SELECT c.estado FROM comprobantes_inicio_estadia c WHERE c.id_estadia=e.id_estadia AND c.tipo='seguro_facultativo' ORDER BY c.id_comprobante DESC LIMIT 1),'sin_registrar') seguro_estado,
+      g.nombre grupo_nombre,CONCAT(up.nombre,' ',up.apellido) profesor_nombre
+      FROM expedientes_estadia ex JOIN estadias e ON e.id_estadia=ex.id_estadia JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN periodos_estadia p ON p.id_periodo=e.id_periodo JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN usuarios up ON up.id_usuario=e.id_profesor
+      ${filtro} ORDER BY ex.creado_en DESC`,params);
+    res.json({ok:true,expedientes:rows});
+  } catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los expedientes.'});}
 };
 
 
@@ -408,13 +447,13 @@ exports.detalleExpediente = async (req,res) => {
   if(!requireRoles(req,res,[1,6,10])) return;
   try {
     const [rows]=await db.query(`SELECT ex.*,e.*,p.nombre periodo_nombre,g.nombre grupo_nombre,
-      es.matricula,es.carrera,es.semestre AS cuatrimestre_actual,es.competencias,es.titulo_profesional,es.biografia,es.idiomas,es.disponibilidad,es.modalidad_preferida,es.ciudad,
+      es.matricula,es.carrera,es.numero_seguro_social,es.semestre AS cuatrimestre_actual,es.competencias,es.titulo_profesional,es.biografia,es.idiomas,es.disponibilidad,es.modalidad_preferida,es.ciudad,
       u.nombre,u.apellido,u.correo,u.telefono,u.foto_perfil,u.fecha_registro,
       CONCAT(up.nombre,' ',up.apellido) profesor_nombre,up.correo profesor_correo,
-      s.id_seguro,s.numero_seguro,s.folio_pago,s.fecha_pago,s.vigencia_inicio,s.vigencia_fin,s.monto,s.ruta_comprobante,s.estado seguro_estado,s.observaciones seguro_observaciones
+      ci.ruta_archivo ruta_comprobante,ci.estado seguro_estado,ci.observaciones seguro_observaciones
       FROM expedientes_estadia ex JOIN estadias e ON e.id_estadia=ex.id_estadia JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
       JOIN periodos_estadia p ON p.id_periodo=e.id_periodo JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN usuarios up ON up.id_usuario=e.id_profesor
-      LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia WHERE ex.id_expediente=? LIMIT 1`,[req.params.id]);
+      LEFT JOIN comprobantes_inicio_estadia ci ON ci.id_estadia=e.id_estadia AND ci.tipo='seguro_facultativo' WHERE ex.id_expediente=? LIMIT 1`,[req.params.id]);
     if(!rows.length) return res.status(404).json({ok:false,mensaje:'Expediente no encontrado.'});
     const expediente=rows[0];
     const [entregas]=await db.query(`SELECT ea.*,fa.numero_avance,fa.titulo,fa.fecha_limite,rr.nivel,rr.calificacion,rr.observaciones revision_observaciones,rr.requiere_correccion
@@ -430,7 +469,7 @@ exports.detalleExpediente = async (req,res) => {
     const checklist=[
       {tipo:'empresa_proyecto',nombre:'Empresa y proyecto de estadía',estado:expediente.empresa_razon_social&&expediente.proyecto_titulo?'completo':'pendiente'},
       {tipo:'inicio_formal',nombre:'Inicio formal autorizado',estado:inicioFormal?.autorizado?'completo':'pendiente'},
-      {tipo:'seguro',nombre:'Seguro facultativo',estado:expediente.seguro_estado==='validado'?'completo':(expediente.seguro_estado||'pendiente')},
+      {tipo:'seguro',nombre:'Seguro facultativo',estado:expediente.seguro_estado==='aprobado'?'completo':(expediente.seguro_estado||'pendiente')},
       ...[1,2,3].map(n=>{const xs=entregas.filter(x=>Number(x.numero_avance)===n);const last=xs[xs.length-1];return {tipo:`taller_${n}`,nombre:`Taller ${n}`,estado:last?.estado||'pendiente',calificacion:last?.calificacion||null,nivel:last?.nivel||null};}),
       {tipo:'empresa_eval_inicial',nombre:'Primera evaluación de la empresa',estado:evaluacionesEmpresa.some(e=>e.momento==='inicial'&&e.respondida_en)?'completo':'pendiente'},
       {tipo:'empresa_eval_final',nombre:'Evaluación final de la empresa',estado:evaluacionesEmpresa.some(e=>e.momento==='final'&&e.respondida_en)?'completo':'pendiente'},
@@ -456,23 +495,51 @@ async function configCalificaciones() {
 }
 
 exports.actualizarPeriodo = async (req,res) => {
-  if(!requireRoles(req,res,[1,10])) return;
-  const {nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,monto_donativo,activo}=req.body;
+  if(!requireRoles(req,res,[1,6])) return;
+  const {nombre,clave,fecha_inicio,fecha_fin,fecha_limite_registro_empresa,fecha_limite_seguro,instrucciones,monto_donativo,fecha_inicio_donativo,fecha_fin_donativo,fecha_inicio_pago_titulo,fecha_fin_pago_titulo,activo}=req.body;
   if(fecha_inicio && fecha_fin && new Date(fecha_fin) < new Date(fecha_inicio)) return res.status(400).json({ok:false,mensaje:'La fecha de fin de estadía no puede ser anterior a la fecha de inicio.'});
   try{
-    await db.query(`UPDATE periodos_estadia SET nombre=COALESCE(?,nombre),clave=COALESCE(?,clave),fecha_inicio=COALESCE(?,fecha_inicio),fecha_fin=COALESCE(?,fecha_fin),fecha_limite_registro_empresa=?,fecha_limite_seguro=?,instrucciones=?,monto_donativo=COALESCE(?,monto_donativo),activo=COALESCE(?,activo) WHERE id_periodo=?`,
-      [nombre||null,clave||null,fecha_inicio||null,fecha_fin||null,fecha_limite_registro_empresa||null,fecha_limite_seguro||null,instrucciones||null,monto_donativo===undefined?null:Number(monto_donativo||0),activo===undefined?null:Boolean(activo),req.params.id]);
+    await db.query(`UPDATE periodos_estadia SET nombre=COALESCE(?,nombre),clave=COALESCE(?,clave),fecha_inicio=COALESCE(?,fecha_inicio),fecha_fin=COALESCE(?,fecha_fin),fecha_limite_registro_empresa=?,fecha_limite_seguro=?,instrucciones=?,monto_donativo=COALESCE(?,monto_donativo),fecha_inicio_donativo=COALESCE(?,fecha_inicio_donativo),fecha_fin_donativo=COALESCE(?,fecha_fin_donativo),fecha_inicio_pago_titulo=COALESCE(?,fecha_inicio_pago_titulo),fecha_fin_pago_titulo=COALESCE(?,fecha_fin_pago_titulo),activo=COALESCE(?,activo) WHERE id_periodo=?`,
+      [nombre||null,clave||null,fecha_inicio||null,fecha_fin||null,fecha_limite_registro_empresa||null,fecha_limite_seguro||null,instrucciones||null,monto_donativo===undefined?null:Number(monto_donativo||0),fecha_inicio_donativo||null,fecha_fin_donativo||null,fecha_inicio_pago_titulo||null,fecha_fin_pago_titulo||null,activo===undefined?null:Boolean(activo),req.params.id]);
     res.json({ok:true});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo actualizar el periodo.'});}
 };
 
+async function carreraAdministradorEstadia(req){
+  if(role(req)!==10) return null;
+  const [rows]=await db.query('SELECT id_carrera FROM administradores_estadia WHERE id_usuario=? AND activo=TRUE LIMIT 1',[req.usuario.id_usuario]);
+  if(!rows.length) return false;
+  return rows[0].id_carrera==null ? null : Number(rows[0].id_carrera);
+}
+async function administradorPuedeCarrera(req,idCarrera){
+  if(role(req)!==10) return true;
+  const propia=await carreraAdministradorEstadia(req);
+  if(propia===false) return false;
+  return propia===null || Number(propia)===Number(idCarrera);
+}
+
 exports.catalogosV6 = async (req,res) => {
   if(!requireRoles(req,res,[1,10])) return;
   try{
-    const [carreras]=await db.query('SELECT id_carrera,nombre FROM carreras ORDER BY nombre');
-    const [gruposEscolares]=await db.query(`SELECT ge.*,c.nombre carrera,(SELECT COUNT(*) FROM estudiantes e WHERE e.id_grupo_escolar=ge.id_grupo_escolar) alumnos FROM grupos_escolares ge JOIN carreras c ON c.id_carrera=ge.id_carrera ORDER BY c.nombre,ge.generacion,ge.nombre`);
-    const [profesores]=await db.query(`SELECT p.id_profesor,p.id_carrera,p.tutor_estadia,u.nombre,u.apellido,u.correo,c.nombre carrera FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor LEFT JOIN carreras c ON c.id_carrera=p.id_carrera WHERE u.estado='activo' ORDER BY u.apellido,u.nombre`);
-    const [estudiantes]=await db.query(`SELECT e.id_estudiante,e.matricula,e.carrera,e.id_grupo_escolar,u.nombre,u.apellido,u.correo,u.estado estado_usuario,COALESCE(ge.nombre,e.grupo) grupo_escolar,ge.generacion FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar ORDER BY e.carrera,ge.nombre,u.apellido,u.nombre`);
+    let idCarrera=null;
+    if(role(req)===10){
+      const [asignacion]=await db.query('SELECT id_carrera FROM administradores_estadia WHERE id_usuario=? AND activo=TRUE LIMIT 1',[req.usuario.id_usuario]);
+      if(!asignacion.length)return res.status(403).json({ok:false,mensaje:'Tu cuenta de Administrador de Estadías no tiene una carrera activa asignada.'});
+      idCarrera=asignacion[0].id_carrera||null;
+    }
+    const carreraWhere=idCarrera?' WHERE id_carrera=?':'';
+    const [carreras]=await db.query(`SELECT id_carrera,nombre FROM carreras${carreraWhere} ORDER BY nombre`,idCarrera?[idCarrera]:[]);
+    const [gruposEscolares]=await db.query(`SELECT ge.*,c.nombre carrera,(SELECT COUNT(*) FROM estudiantes e WHERE e.id_grupo_escolar=ge.id_grupo_escolar) alumnos
+      FROM grupos_escolares ge JOIN carreras c ON c.id_carrera=ge.id_carrera ${idCarrera?'WHERE ge.id_carrera=?':''}
+      ORDER BY c.nombre,ge.generacion,ge.nombre`,idCarrera?[idCarrera]:[]);
+    const [profesores]=await db.query(`SELECT p.id_profesor,p.id_carrera,p.tutor_estadia,u.nombre,u.apellido,u.correo,c.nombre carrera
+      FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor LEFT JOIN carreras c ON c.id_carrera=p.id_carrera
+      WHERE u.estado='activo' ${idCarrera?'AND p.id_carrera=?':''} ORDER BY u.apellido,u.nombre`,idCarrera?[idCarrera]:[]);
+    const [estudiantes]=await db.query(`SELECT e.id_estudiante,e.matricula,e.carrera,e.id_grupo_escolar,ge.id_carrera,u.nombre,u.apellido,u.correo,u.estado estado_usuario,
+      COALESCE(ge.nombre,e.grupo) grupo_escolar,ge.generacion
+      FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar
+      WHERE 1=1 ${idCarrera?'AND ge.id_carrera=?':''}
+      ORDER BY e.carrera,ge.nombre,u.apellido,u.nombre`,idCarrera?[idCarrera]:[]);
     const config=await configCalificaciones();
     res.json({ok:true,carreras,gruposEscolares,profesores,estudiantes,config});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los catálogos V6.'});}
@@ -482,7 +549,9 @@ exports.crearGrupoEscolar = async (req,res) => {
   if(!requireRoles(req,res,[1,10])) return;
   const {nombre,id_carrera,generacion}=req.body;
   if(!nombre||!id_carrera) return res.status(400).json({ok:false,mensaje:'Nombre y carrera son obligatorios.'});
-  try{const [r]=await db.query('INSERT INTO grupos_escolares(nombre,id_carrera,generacion,creado_por) VALUES(?,?,?,?)',[nombre,id_carrera,generacion||null,req.usuario.id_usuario]);res.status(201).json({ok:true,id_grupo_escolar:r.insertId});}
+  try{
+    if(!(await administradorPuedeCarrera(req,id_carrera))) return res.status(403).json({ok:false,mensaje:'Solo puedes crear grupos de tu carrera asignada.'});
+    const [r]=await db.query('INSERT INTO grupos_escolares(nombre,id_carrera,generacion,creado_por) VALUES(?,?,?,?)',[nombre,id_carrera,generacion||null,req.usuario.id_usuario]);res.status(201).json({ok:true,id_grupo_escolar:r.insertId});}
   catch(e){res.status(500).json({ok:false,mensaje:e.code==='23505'?'Ese grupo ya existe.':'No se pudo crear el grupo escolar.'});}
 };
 
@@ -493,8 +562,9 @@ exports.actualizarAlumnoEscolar = async (req,res) => {
     if(id_grupo_escolar!==undefined){
       let grupoNombre=null;
       if(id_grupo_escolar){
-        const [grupo]=await db.query('SELECT id_grupo_escolar,nombre FROM grupos_escolares WHERE id_grupo_escolar=? AND activo=TRUE',[id_grupo_escolar]);
+        const [grupo]=await db.query('SELECT id_grupo_escolar,nombre,id_carrera FROM grupos_escolares WHERE id_grupo_escolar=? AND activo=TRUE',[id_grupo_escolar]);
         if(!grupo.length) return res.status(400).json({ok:false,mensaje:'El grupo escolar seleccionado no existe o está inactivo.'});
+        if(!(await administradorPuedeCarrera(req,grupo[0].id_carrera))) return res.status(403).json({ok:false,mensaje:'No puedes asignar alumnos a un grupo de otra carrera.'});
         grupoNombre=grupo[0].nombre;
       }
       await db.query('UPDATE estudiantes SET id_grupo_escolar=?, grupo=? WHERE id_estudiante=?',[id_grupo_escolar||null,grupoNombre,req.params.id]);
@@ -507,7 +577,14 @@ exports.actualizarAlumnoEscolar = async (req,res) => {
 exports.actualizarProfesorTutor = async (req,res) => {
   if(!requireRoles(req,res,[1,10])) return;
   const {tutor_estadia,id_carrera}=req.body;
-  try{await db.query('UPDATE profesores SET tutor_estadia=?,id_carrera=? WHERE id_profesor=?',[Boolean(tutor_estadia),id_carrera||null,req.params.id]);res.json({ok:true});}
+  try{
+    if(role(req)===10){
+      const propia=await carreraAdministradorEstadia(req);
+      const [prof]=await db.query('SELECT id_carrera FROM profesores WHERE id_profesor=?',[req.params.id]);
+      if(!prof.length || propia===false || (propia!==null && Number(prof[0].id_carrera)!==Number(propia))) return res.status(403).json({ok:false,mensaje:'Solo puedes administrar profesores de tu carrera.'});
+      if(id_carrera && propia!==null && Number(id_carrera)!==Number(propia)) return res.status(403).json({ok:false,mensaje:'No puedes cambiar al profesor a otra carrera.'});
+    }
+    await db.query('UPDATE profesores SET tutor_estadia=?,id_carrera=? WHERE id_profesor=?',[Boolean(tutor_estadia),id_carrera||null,req.params.id]);res.json({ok:true});}
   catch(e){res.status(500).json({ok:false,mensaje:'No se pudo actualizar el profesor.'});}
 };
 
@@ -515,14 +592,37 @@ exports.guardarGruposPeriodo = async (req,res) => {
   if(!requireRoles(req,res,[1,10])) return;
   const ids=Array.isArray(req.body.id_grupos_escolares)?req.body.id_grupos_escolares.map(Number).filter(Boolean):[];
   const conn=await db.getConnection();
-  try{await conn.beginTransaction();await conn.query('DELETE FROM periodo_grupos_escolares WHERE id_periodo=?',[req.params.id]);for(const id of ids) await conn.query('INSERT INTO periodo_grupos_escolares(id_periodo,id_grupo_escolar) VALUES(?,?)',[req.params.id,id]);await conn.commit();res.json({ok:true});}
-  catch(e){await conn.rollback();res.status(500).json({ok:false,mensaje:'No se pudo guardar la selección de grupos.'});}finally{conn.release();}
+  try{
+    await conn.beginTransaction();
+    if(role(req)===10){
+      const propia=await carreraAdministradorEstadia(req);
+      if(propia===false || propia===null) throw new Error('Tu cuenta debe tener una carrera específica asignada para seleccionar grupos.');
+      if(ids.length){
+        const marks=ids.map(()=>'?').join(',');
+        const [validos]=await conn.query(`SELECT id_grupo_escolar FROM grupos_escolares WHERE id_grupo_escolar IN (${marks}) AND id_carrera=?`,[...ids,propia]);
+        if(validos.length!==ids.length) throw new Error('Solo puedes seleccionar grupos escolares de tu carrera.');
+      }
+      await conn.query(`DELETE FROM periodo_grupos_escolares pge USING grupos_escolares ge
+        WHERE pge.id_grupo_escolar=ge.id_grupo_escolar AND pge.id_periodo=? AND ge.id_carrera=?`,[req.params.id,propia]);
+    }else{
+      await conn.query('DELETE FROM periodo_grupos_escolares WHERE id_periodo=?',[req.params.id]);
+    }
+    for(const id of ids) await conn.query('INSERT INTO periodo_grupos_escolares(id_periodo,id_grupo_escolar) VALUES(?,?) ON CONFLICT DO NOTHING',[req.params.id,id]);
+    await conn.commit();res.json({ok:true});
+  }catch(e){try{await conn.rollback();}catch{};res.status(400).json({ok:false,mensaje:e.message||'No se pudo guardar la selección de grupos.'});}finally{conn.release();}
 };
 
 exports.obtenerGruposPeriodo = async (req,res) => {
   if(!requireRoles(req,res,[1,10])) return;
-  try{const [rows]=await db.query('SELECT id_grupo_escolar FROM periodo_grupos_escolares WHERE id_periodo=?',[req.params.id]);res.json({ok:true,id_grupos_escolares:rows.map(x=>x.id_grupo_escolar)});}
-  catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar la selección.'});}
+  try{
+    if(role(req)===10){
+      const propia=await carreraAdministradorEstadia(req);
+      if(propia===false || propia===null) return res.status(403).json({ok:false,mensaje:'Tu cuenta no tiene una carrera específica asignada.'});
+      const [rows]=await db.query(`SELECT pge.id_grupo_escolar FROM periodo_grupos_escolares pge JOIN grupos_escolares ge ON ge.id_grupo_escolar=pge.id_grupo_escolar WHERE pge.id_periodo=? AND ge.id_carrera=?`,[req.params.id,propia]);
+      return res.json({ok:true,id_grupos_escolares:rows.map(x=>x.id_grupo_escolar)});
+    }
+    const [rows]=await db.query('SELECT id_grupo_escolar FROM periodo_grupos_escolares WHERE id_periodo=?',[req.params.id]);res.json({ok:true,id_grupos_escolares:rows.map(x=>x.id_grupo_escolar)});
+  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar la selección.'});}
 };
 
 function shuffle(items){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
@@ -532,13 +632,24 @@ exports.generarGruposEstadia = async (req,res) => {
   const idPeriodo=Number(req.params.id);
   const conn=await db.getConnection();
   try{
-    const [seleccion]=await conn.query(`SELECT pge.id_grupo_escolar,ge.id_carrera,ge.generacion,ge.nombre grupo_escolar_nombre,c.nombre carrera FROM periodo_grupos_escolares pge JOIN grupos_escolares ge ON ge.id_grupo_escolar=pge.id_grupo_escolar JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE pge.id_periodo=?`,[idPeriodo]);
+    let propia=null;
+    if(role(req)===10){
+      propia=await carreraAdministradorEstadia(req);
+      if(propia===false || propia===null) return res.status(403).json({ok:false,mensaje:'Tu cuenta debe tener una carrera específica asignada.'});
+    }
+    const params=[idPeriodo];
+    let carreraFilter='';
+    if(propia!==null){carreraFilter=' AND ge.id_carrera=?';params.push(propia);}
+    const [seleccion]=await conn.query(`SELECT pge.id_grupo_escolar,ge.id_carrera,ge.generacion,ge.nombre grupo_escolar_nombre,c.nombre carrera FROM periodo_grupos_escolares pge JOIN grupos_escolares ge ON ge.id_grupo_escolar=pge.id_grupo_escolar JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE pge.id_periodo=?${carreraFilter}`,params);
     if(!seleccion.length) return res.status(400).json({ok:false,mensaje:'Selecciona primero los grupos escolares que salen a estadía.'});
     const carreras=[...new Map(seleccion.map(x=>[Number(x.id_carrera),x])).values()];
-    const [existentes]=await conn.query('SELECT COUNT(*) total FROM estadias WHERE id_periodo=?',[idPeriodo]);
-    if(Number(existentes[0]?.total||0)>0) return res.status(400).json({ok:false,mensaje:'Este periodo ya tiene estadías registradas. No puede regenerarse automáticamente; ajusta los tutores de forma manual.'});
+    const existingParams=[idPeriodo]; let existingFilter='';
+    if(propia!==null){existingFilter=' AND g.id_carrera=?';existingParams.push(propia);}
+    const [existentes]=await conn.query(`SELECT COUNT(*) total FROM estadias e JOIN grupos_estadia g ON g.id_grupo=e.id_grupo WHERE e.id_periodo=?${existingFilter}`,existingParams);
+    if(Number(existentes[0]?.total||0)>0) return res.status(400).json({ok:false,mensaje:'Ya existen estadías registradas para estos grupos. Ajusta tutor y alumnos de forma manual.'});
     await conn.beginTransaction();
-    await conn.query('DELETE FROM grupos_estadia WHERE id_periodo=?',[idPeriodo]);
+    if(propia!==null) await conn.query('DELETE FROM grupos_estadia WHERE id_periodo=? AND id_carrera=?',[idPeriodo,propia]);
+    else await conn.query('DELETE FROM grupos_estadia WHERE id_periodo=?',[idPeriodo]);
     let creados=0;
     for(const car of carreras){
       const seleccionCarrera=seleccion.filter(x=>Number(x.id_carrera)===Number(car.id_carrera));
@@ -546,10 +657,10 @@ exports.generarGruposEstadia = async (req,res) => {
       const nombresOrigen=seleccionCarrera.map(x=>String(x.grupo_escolar_nombre||'').trim()).filter(Boolean);
       const marksIds=gruposOrigen.map(()=>'?').join(',');
       const marksNames=nombresOrigen.map(()=>'?').join(',');
-      const filtros=[]; const params=[];
-      if(gruposOrigen.length){filtros.push(`e.id_grupo_escolar IN (${marksIds})`);params.push(...gruposOrigen);}
-      if(nombresOrigen.length){filtros.push(`LOWER(TRIM(COALESCE(e.grupo,''))) IN (${marksNames})`);params.push(...nombresOrigen.map(x=>x.toLowerCase()));}
-      const [alumnos]=await conn.query(`SELECT DISTINCT e.id_estudiante FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante WHERE (${filtros.join(' OR ')}) AND u.estado='activo' ORDER BY e.id_estudiante`,params);
+      const filtros=[]; const qparams=[];
+      if(gruposOrigen.length){filtros.push(`e.id_grupo_escolar IN (${marksIds})`);qparams.push(...gruposOrigen);}
+      if(nombresOrigen.length){filtros.push(`LOWER(TRIM(COALESCE(e.grupo,''))) IN (${marksNames})`);qparams.push(...nombresOrigen.map(x=>x.toLowerCase()));}
+      const [alumnos]=await conn.query(`SELECT DISTINCT e.id_estudiante FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante WHERE (${filtros.join(' OR ')}) AND u.estado='activo' ORDER BY e.id_estudiante`,qparams);
       const [tutores]=await conn.query(`SELECT p.id_profesor FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor WHERE p.tutor_estadia=TRUE AND p.id_carrera=? AND u.estado='activo' ORDER BY p.id_profesor`,[car.id_carrera]);
       if(!alumnos.length) continue;
       const gruposNecesarios=Math.ceil(alumnos.length/6);
@@ -566,7 +677,7 @@ exports.generarGruposEstadia = async (req,res) => {
       }
     }
     await conn.commit();res.json({ok:true,grupos_creados:creados});
-  }catch(e){try{await conn.rollback();}catch{};res.status(400).json({ok:false,mensaje:e.message||'No se pudieron generar los grupos.'});}finally{conn.release();}
+  }catch(e){try{await conn.rollback();}catch{};console.error(e);res.status(400).json({ok:false,mensaje:e.message||'No se pudieron generar los grupos.'});}finally{conn.release();}
 };
 
 exports.actualizarTaller = async (req,res) => {
@@ -593,6 +704,18 @@ exports.alumnosServicios = async (req,res) => {
   catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los alumnos.'});}
 };
 
+exports.actualizarSeguroSocialAlumno = async (req,res) => {
+  if(!requireRoles(req,res,[6])) return;
+  const numero=String(req.body.numero_seguro_social||'').trim();
+  if(!numero)return res.status(400).json({ok:false,mensaje:'Captura el número de seguro social del alumno.'});
+  if(!/^[0-9A-Za-z-]{8,20}$/.test(numero))return res.status(400).json({ok:false,mensaje:'El número de seguro social tiene un formato inválido.'});
+  try{
+    const [r]=await db.query('UPDATE estudiantes SET numero_seguro_social=? WHERE id_estudiante=?',[numero,req.params.id]);
+    if(!r.rowCount && !r.affectedRows)return res.status(404).json({ok:false,mensaje:'Alumno no encontrado.'});
+    res.json({ok:true,mensaje:'Número de seguro social actualizado.'});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo guardar el número de seguro social.'});}
+};
+
 exports.gruposProfesor = async (req,res) => {
   if(!requireRoles(req,res,[4])) return;
   try{const [rows]=await db.query(`SELECT g.*,p.nombre periodo_nombre,p.clave periodo_clave,(SELECT COUNT(*) FROM grupo_estudiantes_estadia ge WHERE ge.id_grupo=g.id_grupo) total_alumnos FROM grupos_estadia g JOIN periodos_estadia p ON p.id_periodo=g.id_periodo WHERE g.id_profesor=? AND g.activo=TRUE ORDER BY p.fecha_inicio DESC,g.nombre`,[req.usuario.id_usuario]);res.json({ok:true,grupos:rows});}
@@ -615,7 +738,7 @@ exports.entregarEnlace = async (req,res) => {
   if(!requireRoles(req,res,[2])) return;
   const {enlace_google_docs,comentario}=req.body;
   if(!/^https:\/\/(docs|drive)\.google\.com\//i.test(String(enlace_google_docs||''))) return res.status(400).json({ok:false,mensaje:'Ingresa un enlace válido de Google Docs/Drive.'});
-  try{const [est]=await db.query('SELECT * FROM estadias WHERE id_estudiante=? ORDER BY creada_en DESC LIMIT 1',[req.usuario.id_usuario]);if(!est.length)return res.status(400).json({ok:false,mensaje:'No tienes estadía registrada.'});const [fecha]=await db.query('SELECT * FROM fechas_avances_estadia WHERE id_fecha_avance=? AND id_grupo=?',[req.params.idFecha,est[0].id_grupo]);if(!fecha.length)return res.status(404).json({ok:false,mensaje:'Entrega no encontrada.'});if(new Date()>new Date(fecha[0].fecha_limite))return res.status(400).json({ok:false,mensaje:'La entrega ya cerró.'});const [prev]=await db.query('SELECT COALESCE(MAX(version),0) max_version FROM entregas_avances_estadia WHERE id_estadia=? AND id_fecha_avance=?',[est[0].id_estadia,req.params.idFecha]);const version=Number(prev[0].max_version||0)+1;await db.query(`INSERT INTO entregas_avances_estadia(id_estadia,id_fecha_avance,version,ruta_archivo,enlace_google_docs,comentario_estudiante,comentario_actualizado_en,estado,es_tardia) VALUES(?,?,?,NULL,?,?,CURRENT_TIMESTAMP,'entregado',FALSE)`,[est[0].id_estadia,req.params.idFecha,version,enlace_google_docs,comentario||null]);res.json({ok:true,version});}
+  try{const [est]=await db.query('SELECT * FROM estadias WHERE id_estudiante=? ORDER BY creada_en DESC LIMIT 1',[req.usuario.id_usuario]);if(!est.length)return res.status(400).json({ok:false,mensaje:'No tienes estadía registrada.'});const [fecha]=await db.query('SELECT * FROM fechas_avances_estadia WHERE id_fecha_avance=? AND id_grupo=?',[req.params.idFecha,est[0].id_grupo]);if(!fecha.length)return res.status(404).json({ok:false,mensaje:'Entrega no encontrada.'});if(new Date()>new Date(fecha[0].fecha_limite))return res.status(400).json({ok:false,mensaje:'La entrega ya cerró.'});const [prev]=await db.query('SELECT id_entrega,estado FROM entregas_avances_estadia WHERE id_estadia=? AND id_fecha_avance=? ORDER BY version DESC LIMIT 1',[est[0].id_estadia,req.params.idFecha]);if(prev.length)return res.status(409).json({ok:false,mensaje:'Esta entrega ya fue enviada. Espera la revisión del profesor; no es necesario volver a compartir el enlace.'});const version=1;await db.query(`INSERT INTO entregas_avances_estadia(id_estadia,id_fecha_avance,version,ruta_archivo,enlace_google_docs,comentario_estudiante,comentario_actualizado_en,estado,es_tardia) VALUES(?,?,?,NULL,?,?,CURRENT_TIMESTAMP,'entregado',FALSE)`,[est[0].id_estadia,req.params.idFecha,version,enlace_google_docs,comentario||null]);res.json({ok:true,version});}
   catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo guardar la entrega.'});}
 };
 
@@ -623,7 +746,7 @@ exports.subirMemoriaFinal = async (req,res) => {
   if(!requireRoles(req,res,[2])) return;
   if(!req.file || req.file.mimetype!=='application/pdf') return res.status(400).json({ok:false,mensaje:'La memoria final debe ser PDF.'});
   try{
-    const [rows]=await db.query(`SELECT es.id_estadia,es.memoria_final_habilitada,COALESCE(es.memoria_final_version,0) memoria_final_version,
+    const [rows]=await db.query(`SELECT es.id_estadia,es.memoria_final_habilitada,es.memoria_final_ruta,COALESCE(es.memoria_final_version,0) memoria_final_version,
       g.nombre grupo,u.nombre,u.apellido
       FROM estadias es JOIN grupos_estadia g ON g.id_grupo=es.id_grupo JOIN usuarios u ON u.id_usuario=es.id_estudiante
       WHERE es.id_estudiante=? ORDER BY es.creada_en DESC LIMIT 1`,[req.usuario.id_usuario]);
@@ -641,21 +764,24 @@ exports.subirMemoriaFinal = async (req,res) => {
     const esperado=normalizarArchivo(nombreEsperado);
     const recibido=normalizarArchivo(req.file.originalname);
     if(recibido!==esperado)return res.status(400).json({ok:false,mensaje:`El archivo debe llamarse ${nombreEsperado}`});
+    if(e.memoria_final_ruta){
+      const [rechazos]=await db.query(`SELECT COUNT(*) total FROM validaciones_cierre_estadia
+        WHERE id_estadia=? AND area IN ('empresa_memoria','biblioteca','laboratorios','direccion','vinculacion')
+        AND estado IN ('rechazado','requiere_correccion')`,[e.id_estadia]);
+      if(Number(rechazos[0]?.total||0)===0) return res.status(409).json({ok:false,mensaje:'La memoria ya fue enviada. Solo puedes reemplazarla cuando la empresa o un área institucional solicite una corrección.'});
+    }
     const nuevaVersion=Number(e.memoria_final_version||0)+1;
     const ruta=filePath(req.file);
     await db.query(`UPDATE estadias SET memoria_final_ruta=?,memoria_final_nombre=?,memoria_final_mime=?,
       memoria_final_subida_en=CURRENT_TIMESTAMP,memoria_final_version=? WHERE id_estadia=?`,
       [ruta,req.file.originalname,req.file.mimetype,nuevaVersion,e.id_estadia]);
 
-    // V8.2: al subir/reemplazar la memoria final se crea automáticamente la bandeja de revisión.
-    // Así el alumno no tiene que "mandarla" a cada área manualmente y siempre aparece en Biblioteca,
-    // Laboratorios y Empresa. El token de empresa se conserva si ya existía para que el mismo enlace siga funcionando.
-    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en)
-      VALUES(?,'biblioteca','en_revision',CURRENT_TIMESTAMP)
-      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',observaciones=NULL,revisado_por=NULL,revisado_en=NULL,actualizado_en=CURRENT_TIMESTAMP,enviado_en=CURRENT_TIMESTAMP`,[e.id_estadia]);
-    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en)
-      VALUES(?,'laboratorios','en_revision',CURRENT_TIMESTAMP)
-      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',observaciones=NULL,revisado_por=NULL,revisado_en=NULL,actualizado_en=CURRENT_TIMESTAMP,enviado_en=CURRENT_TIMESTAMP`,[e.id_estadia]);
+    // V9.2: la empresa es la primera revisión obligatoria de la memoria.
+    // Biblioteca, Laboratorios, Dirección y Vinculación permanecen pendientes hasta que la empresa apruebe.
+    // Si se reemplaza una memoria por corrección, todas las aprobaciones institucionales se reinician porque la versión cambió.
+    await db.query(`UPDATE validaciones_cierre_estadia SET estado='pendiente',observaciones=NULL,revisado_por=NULL,revisado_en=NULL,
+      actualizado_en=CURRENT_TIMESTAMP,enviado_en=NULL
+      WHERE id_estadia=? AND area IN ('biblioteca','laboratorios','direccion','vinculacion')`,[e.id_estadia]);
     const [empresaVal]=await db.query(`SELECT id_validacion,token_publico FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='empresa_memoria' LIMIT 1`,[e.id_estadia]);
     const tokenEmpresa=empresaVal[0]?.token_publico || crypto.randomBytes(24).toString('hex');
     await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,token_publico,enviado_en)
@@ -800,6 +926,7 @@ exports.alumnosDisponiblesGrupoEstadia = async (req,res) => {
     const [g]=await db.query('SELECT id_grupo,id_periodo,id_carrera FROM grupos_estadia WHERE id_grupo=?',[req.params.id]);
     if(!g.length) return res.status(404).json({ok:false,mensaje:'Grupo de estadía no encontrado.'});
     const grupo=g[0];
+    if(!(await administradorPuedeCarrera(req,grupo.id_carrera))) return res.status(403).json({ok:false,mensaje:'Este grupo pertenece a otra carrera.'});
     const params=[grupo.id_periodo];
     let carreraSql='';
     if(grupo.id_carrera){
@@ -827,6 +954,7 @@ exports.agregarAlumnoGrupoEstadia = async (req,res) => {
   try{
     const [g]=await db.query('SELECT id_grupo,id_periodo,id_carrera,max_alumnos FROM grupos_estadia WHERE id_grupo=?',[idGrupo]);
     if(!g.length) return res.status(404).json({ok:false,mensaje:'Grupo no encontrado.'});
+    if(!(await administradorPuedeCarrera(req,g[0].id_carrera))) return res.status(403).json({ok:false,mensaje:'Este grupo pertenece a otra carrera.'});
     const [count]=await db.query('SELECT COUNT(*) total FROM grupo_estudiantes_estadia WHERE id_grupo=?',[idGrupo]);
     if(Number(count[0]?.total||0)>=Number(g[0].max_alumnos||6)) return res.status(400).json({ok:false,mensaje:'El grupo ya alcanzó su máximo de alumnos.'});
     const [al]=await db.query(`SELECT e.id_estudiante,ge.id_carrera,e.carrera,c.nombre carrera_grupo FROM estudiantes e LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar LEFT JOIN carreras c ON c.id_carrera=ge.id_carrera WHERE e.id_estudiante=?`,[idEstudiante]);
@@ -847,6 +975,9 @@ exports.agregarAlumnoGrupoEstadia = async (req,res) => {
 exports.quitarAlumnoGrupoEstadia = async (req,res) => {
   if(!requireRoles(req,res,[1,10])) return;
   try{
+    const [grupo]=await db.query('SELECT id_carrera FROM grupos_estadia WHERE id_grupo=?',[req.params.id]);
+    if(!grupo.length) return res.status(404).json({ok:false,mensaje:'Grupo no encontrado.'});
+    if(!(await administradorPuedeCarrera(req,grupo[0].id_carrera))) return res.status(403).json({ok:false,mensaje:'Este grupo pertenece a otra carrera.'});
     const [est]=await db.query('SELECT id_estadia FROM estadias WHERE id_grupo=? AND id_estudiante=? LIMIT 1',[req.params.id,req.params.idEstudiante]);
     if(est.length) return res.status(409).json({ok:false,mensaje:'No se puede retirar al alumno porque ya registró información de su estadía.'});
     await db.query('DELETE FROM grupo_estudiantes_estadia WHERE id_grupo=? AND id_estudiante=?',[req.params.id,req.params.idEstudiante]);
@@ -858,8 +989,9 @@ exports.eliminarGrupoEstadia = async (req,res) => {
   if(!requireRoles(req,res,[1,10])) return;
   const idGrupo=Number(req.params.id);
   try{
-    const [g]=await db.query('SELECT id_grupo,nombre FROM grupos_estadia WHERE id_grupo=?',[idGrupo]);
+    const [g]=await db.query('SELECT id_grupo,nombre,id_carrera FROM grupos_estadia WHERE id_grupo=?',[idGrupo]);
     if(!g.length) return res.status(404).json({ok:false,mensaje:'Grupo de estadía no encontrado.'});
+    if(!(await administradorPuedeCarrera(req,g[0].id_carrera))) return res.status(403).json({ok:false,mensaje:'Este grupo pertenece a otra carrera.'});
     const [est]=await db.query('SELECT COUNT(*) total FROM estadias WHERE id_grupo=?',[idGrupo]);
     if(Number(est[0]?.total||0)>0) return res.status(409).json({ok:false,mensaje:'No se puede eliminar el grupo porque uno o más alumnos ya registraron información de su estadía. Primero elimina o reasigna esas estadías.'});
     await db.query('DELETE FROM grupos_estadia WHERE id_grupo=?',[idGrupo]);
@@ -1076,6 +1208,17 @@ exports.generarEvaluacionEmpresa = async (req,res) => {
   try{
     const [own]=await db.query('SELECT id_estadia,id_empresa,empresa_razon_social,responsable_correo FROM estadias WHERE id_estadia=? AND id_profesor=?',[idEstadia,req.usuario.id_usuario]);
     if(!own.length)return res.status(403).json({ok:false,mensaje:'Esta estadía no está asignada a tu cuenta.'});
+    const [inicio]=await db.query('SELECT autorizado FROM inicio_formal_estadia WHERE id_estadia=? LIMIT 1',[idEstadia]);
+    if(!inicio[0]?.autorizado)return res.status(400).json({ok:false,mensaje:'Primero debe quedar autorizado el inicio formal de la estadía.'});
+    const [existente]=await db.query('SELECT id_evaluacion_empresa,respondida_en FROM evaluaciones_empresa_estadia WHERE id_estadia=? AND momento=? LIMIT 1',[idEstadia,momento]);
+    if(existente[0]?.respondida_en)return res.status(409).json({ok:false,mensaje:`La evaluación ${momento} de empresa ya fue respondida y no puede regenerarse.`});
+    if(momento==='final'){
+      const [inicial]=await db.query("SELECT respondida_en FROM evaluaciones_empresa_estadia WHERE id_estadia=? AND momento='inicial' LIMIT 1",[idEstadia]);
+      if(!inicial[0]?.respondida_en)return res.status(400).json({ok:false,mensaje:'La empresa debe responder primero la evaluación inicial.'});
+      const [talleres]=await db.query(`SELECT COUNT(DISTINCT fa.numero_avance) aprobados FROM entregas_avances_estadia ea
+        JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance WHERE ea.id_estadia=? AND ea.estado='aprobado'`,[idEstadia]);
+      if(Number(talleres[0]?.aprobados||0)<3)return res.status(400).json({ok:false,mensaje:'Los tres talleres deben estar evaluados antes de habilitar la evaluación final de empresa.'});
+    }
     const token=crypto.randomBytes(24).toString('hex');
     const [r]=await db.query(`INSERT INTO evaluaciones_empresa_estadia(id_estadia,momento,token_publico,generada_por,vence_en)
       VALUES(?,?,?,?,CURRENT_TIMESTAMP + INTERVAL '30 days')
@@ -1251,7 +1394,7 @@ exports.actualizarInicioFormal = async (req,res) => {
       const [comp]=await db.query(`SELECT COUNT(*) FILTER(WHERE estado='aprobado') aprobados FROM comprobantes_inicio_estadia WHERE id_estadia=?`,[id]);
       const [base]=await db.query('SELECT datos_oficiales_completos FROM estadias WHERE id_estadia=?',[id]);
       const [doc]=await db.query(`SELECT estado FROM documentos_oficiales_estadia WHERE id_estadia=? AND tipo='carta_inicio' LIMIT 1`,[id]);
-      if(Number(comp[0]?.aprobados||0)<3)return res.status(400).json({ok:false,mensaje:'Servicios Escolares debe aprobar pago de cuatrimestre, seguro facultativo e inscripción antes del inicio formal.'});
+      if(Number(comp[0]?.aprobados||0)<2)return res.status(400).json({ok:false,mensaje:'Servicios Escolares debe aprobar inscripción/pago de cuatrimestre y seguro facultativo antes del inicio formal.'});
       if(!base[0]?.datos_oficiales_completos)return res.status(400).json({ok:false,mensaje:'Completa primero los datos oficiales del proyecto y empresa.'});
       if(doc[0]?.estado!=='firmado_validado')return res.status(400).json({ok:false,mensaje:'Primero genera la carta de inicio y sube la versión firmada por alumno, empresa y asesor.'});
     }
@@ -1282,10 +1425,12 @@ const AREA_BY_ROLE_V8 = { 6:'servicios_escolares', 7:'biblioteca', 8:'laboratori
 
 async function cierrePrerequisitos(idEstadia){
   const [base]=await db.query(`SELECT e.id_estadia,e.id_estudiante,e.id_profesor,e.id_empresa,e.estado AS estado_estadia,e.memoria_final_ruta,e.memoria_final_nombre,
-    COALESCE(e.memoria_final_version,0) memoria_final_version,e.memoria_final_subida_en,e.memoria_final_autorizada,e.hoja_previa_toma_generada_en,p.monto_donativo,
-    s.estado seguro_estado,COALESCE(i.autorizado,FALSE) inicio_autorizado
+    COALESCE(e.memoria_final_version,0) memoria_final_version,e.memoria_final_subida_en,e.memoria_final_autorizada,e.hoja_previa_toma_generada_en,
+    p.monto_donativo,p.fecha_inicio_donativo,p.fecha_fin_donativo,p.fecha_inicio_pago_titulo,p.fecha_fin_pago_titulo,
+    COALESCE((SELECT c.estado FROM comprobantes_inicio_estadia c WHERE c.id_estadia=e.id_estadia AND c.tipo='seguro_facultativo' ORDER BY c.id_comprobante DESC LIMIT 1),'pendiente') seguro_estado,
+    COALESCE((SELECT c.estado FROM comprobantes_inicio_estadia c WHERE c.id_estadia=e.id_estadia AND c.tipo='inscripcion' ORDER BY c.id_comprobante DESC LIMIT 1),'pendiente') inscripcion_estado,
+    COALESCE(i.autorizado,FALSE) inicio_autorizado
     FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
-    LEFT JOIN seguros_facultativos s ON s.id_estadia=e.id_estadia
     LEFT JOIN inicio_formal_estadia i ON i.id_estadia=e.id_estadia WHERE e.id_estadia=? LIMIT 1`,[idEstadia]);
   if(!base.length) return null;
   const [av]=await db.query(`SELECT COUNT(DISTINCT fa.numero_avance) aprobados
@@ -1298,14 +1443,14 @@ async function cierrePrerequisitos(idEstadia){
     avances_aprobados:Number(av[0]?.aprobados||0),
     evaluacion_empresa_final:Boolean(finalEmpresa),
     evaluacion_empresa_codigo:finalEmpresa?.codigo_final||null,
-    listo:Boolean(base[0].inicio_autorizado && base[0].seguro_estado==='validado' && Number(av[0]?.aprobados||0)>=3 && finalEmpresa && base[0].memoria_final_ruta && base[0].memoria_final_autorizada)
+    listo:Boolean(base[0].inicio_autorizado && base[0].seguro_estado==='aprobado' && base[0].inscripcion_estado==='aprobado' && Number(av[0]?.aprobados||0)>=3 && finalEmpresa && base[0].memoria_final_ruta && base[0].memoria_final_autorizada)
   };
 }
 
 async function validacionesCierre(idEstadia){
   const [rows]=await db.query(`SELECT v.*,CONCAT(u.nombre,' ',u.apellido) revisado_por_nombre
     FROM validaciones_cierre_estadia v LEFT JOIN usuarios u ON u.id_usuario=v.revisado_por
-    WHERE v.id_estadia=? ORDER BY CASE v.area WHEN 'biblioteca' THEN 1 WHEN 'laboratorios' THEN 2 WHEN 'centro_idiomas' THEN 3 WHEN 'servicios_escolares' THEN 4 WHEN 'empresa_memoria' THEN 5 ELSE 9 END`,[idEstadia]);
+    WHERE v.id_estadia=? ORDER BY CASE v.area WHEN 'empresa_memoria' THEN 1 WHEN 'biblioteca' THEN 2 WHEN 'laboratorios' THEN 3 WHEN 'centro_idiomas' THEN 4 WHEN 'servicios_escolares' THEN 5 WHEN 'direccion' THEN 6 WHEN 'vinculacion' THEN 7 WHEN 'datos_alumno' THEN 8 WHEN 'pago_titulo' THEN 9 ELSE 10 END`,[idEstadia]);
   return rows;
 }
 
@@ -1360,15 +1505,11 @@ exports.solicitarCierreInicial = async (req,res) => {
     const id=x[0].id_estadia,pre=await cierrePrerequisitos(id);
     if(!pre?.listo)return res.status(400).json({ok:false,mensaje:'Antes de iniciar el cierre deben estar aprobados el inicio formal, seguro, tres talleres, evaluación final de empresa y memoria técnica por tu asesor.'});
     const token=crypto.randomBytes(24).toString('hex');
-    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en) VALUES(?, 'biblioteca','en_revision',CURRENT_TIMESTAMP)
-      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',enviado_en=CURRENT_TIMESTAMP,observaciones=NULL,revisado_por=NULL,revisado_en=NULL`,[id]);
-    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en) VALUES(?, 'laboratorios','en_revision',CURRENT_TIMESTAMP)
-      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',enviado_en=CURRENT_TIMESTAMP,observaciones=NULL,revisado_por=NULL,revisado_en=NULL`,[id]);
     await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,token_publico,enviado_en) VALUES(?, 'empresa_memoria','en_revision',?,CURRENT_TIMESTAMP)
-      ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',token_publico=EXCLUDED.token_publico,enviado_en=CURRENT_TIMESTAMP,observaciones=NULL,revisado_por=NULL,revisado_en=NULL`,[id,token]);
+      ON CONFLICT(id_estadia,area) DO UPDATE SET estado=CASE WHEN validaciones_cierre_estadia.estado='aprobado' THEN 'aprobado' ELSE 'en_revision' END,token_publico=COALESCE(validaciones_cierre_estadia.token_publico,EXCLUDED.token_publico),enviado_en=CURRENT_TIMESTAMP,observaciones=NULL,revisado_por=NULL,revisado_en=NULL`,[id,token]);
     await db.query('UPDATE estadias SET cierre_solicitado_en=CURRENT_TIMESTAMP,estado=? WHERE id_estadia=?',['cierre_institucional',id]);
     const base=(process.env.FRONTEND_ORIGIN||'http://localhost:3000').replace(/\/$/,'');
-    res.json({ok:true,mensaje:'Cierre enviado a Biblioteca, Laboratorios y empresa.',enlace_empresa:`${base}/aprobacion-memoria/${token}`});
+    res.json({ok:true,mensaje:'La memoria fue enviada primero a la empresa. Cuando la empresa la apruebe, SkillMatch habilitará automáticamente Biblioteca, Laboratorios, Dirección y Vinculación.',enlace_empresa:`${base}/aprobacion-memoria/${token}`});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo iniciar el cierre institucional.'});}
 };
 
@@ -1379,7 +1520,10 @@ exports.subirExamenIngles = async (req,res) => {
     const [x]=await db.query('SELECT id_estadia FROM estadias WHERE id_estudiante=? ORDER BY creada_en DESC LIMIT 1',[req.usuario.id_usuario]);
     if(!x.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
     const vals=await validacionesCierre(x[0].id_estadia);
-    if(!['biblioteca','laboratorios'].every(a=>vals.some(v=>v.area===a&&v.estado==='aprobado')))return res.status(400).json({ok:false,mensaje:'Biblioteca y Laboratorios deben aprobar primero.'});
+    const empresaOk=vals.some(v=>v.area==='empresa_memoria'&&v.estado==='aprobado');
+    if(!empresaOk)return res.status(400).json({ok:false,mensaje:'La empresa debe aprobar primero la memoria técnica.'});
+    const prev=vals.find(v=>v.area==='centro_idiomas');
+    if(prev && !['rechazado','requiere_correccion'].includes(prev.estado)) return res.status(409).json({ok:false,mensaje:'El certificado de inglés ya fue enviado. Solo puede reemplazarse si Centro de Idiomas lo rechaza o solicita corrección.'});
     await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,ruta_archivo,nombre_archivo,mime_type,enviado_en)
       VALUES(?,'centro_idiomas','en_revision',?,?,?,CURRENT_TIMESTAMP)
       ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',ruta_archivo=EXCLUDED.ruta_archivo,nombre_archivo=EXCLUDED.nombre_archivo,mime_type=EXCLUDED.mime_type,enviado_en=CURRENT_TIMESTAMP,observaciones=NULL,revisado_por=NULL,revisado_en=NULL`,
@@ -1394,8 +1538,13 @@ exports.subirDonativo = async (req,res) => {
   try{
     const [x]=await db.query('SELECT id_estadia FROM estadias WHERE id_estudiante=? ORDER BY creada_en DESC LIMIT 1',[req.usuario.id_usuario]);
     if(!x.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
-    const [estInfo]=await db.query(`SELECT p.monto_donativo,e.memoria_final_ruta FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo WHERE e.id_estadia=?`,[x[0].id_estadia]);
+    const [estInfo]=await db.query(`SELECT p.monto_donativo,p.fecha_inicio_donativo,p.fecha_fin_donativo,e.memoria_final_ruta FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo WHERE e.id_estadia=?`,[x[0].id_estadia]);
     if(!estInfo[0]?.memoria_final_ruta)return res.status(400).json({ok:false,mensaje:'Primero debe estar cargada la memoria técnica final.'});
+    const hoy=new Date();
+    if(estInfo[0]?.fecha_inicio_donativo && hoy<new Date(estInfo[0].fecha_inicio_donativo)) return res.status(400).json({ok:false,mensaje:'El periodo para subir el donativo todavía no inicia.'});
+    if(estInfo[0]?.fecha_fin_donativo && hoy>new Date(String(estInfo[0].fecha_fin_donativo)+'T23:59:59')) return res.status(400).json({ok:false,mensaje:'El periodo para subir el donativo ya terminó.'});
+    const [prevDon]=await db.query("SELECT estado FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='servicios_escolares' LIMIT 1",[x[0].id_estadia]);
+    if(prevDon.length && !['rechazado','requiere_correccion'].includes(prevDon[0].estado)) return res.status(409).json({ok:false,mensaje:'El comprobante de donativo ya fue enviado. Solo puede reemplazarse si Servicios Escolares lo rechaza o solicita corrección.'});
     const referencia=`DON-${new Date().getFullYear()}-${String(x[0].id_estadia).padStart(6,'0')}`;
     await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,ruta_archivo,nombre_archivo,mime_type,enviado_en,referencia_donativo,monto_donativo)
       VALUES(?,'servicios_escolares','en_revision',?,?,?,CURRENT_TIMESTAMP,?,?)
@@ -1413,7 +1562,10 @@ exports.validacionesInstitucionales = async (req,res) => {
   const area=AREA_BY_ROLE_V8[role(req)]||String(req.query.area||'');
   try{
     const params=[];let filtro='';
-    if(area){filtro='WHERE v.area=?';params.push(area);}
+    if(area){
+      filtro='WHERE v.area=?';params.push(area);
+      if(['biblioteca','laboratorios'].includes(area)) filtro += " AND EXISTS (SELECT 1 FROM validaciones_cierre_estadia em WHERE em.id_estadia=v.id_estadia AND em.area='empresa_memoria' AND em.estado='aprobado')";
+    }
     const [rows]=await db.query(`SELECT v.*,e.id_estudiante,e.proyecto_titulo,e.empresa_razon_social,e.memoria_final_ruta,e.memoria_final_nombre,
       u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre
       FROM validaciones_cierre_estadia v JOIN estadias e ON e.id_estadia=v.id_estadia
@@ -1432,6 +1584,10 @@ exports.resolverValidacionInstitucional = async (req,res) => {
     const [v]=await db.query('SELECT * FROM validaciones_cierre_estadia WHERE id_validacion=? AND area=? LIMIT 1',[req.params.id,area]);
     if(!v.length)return res.status(404).json({ok:false,mensaje:'Validación no encontrada para tu área.'});
     const [est]=await db.query('SELECT memoria_final_ruta FROM estadias WHERE id_estadia=?',[v[0].id_estadia]);
+    if(['biblioteca','laboratorios'].includes(area)){
+      const [empresa]=await db.query("SELECT estado FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='empresa_memoria' LIMIT 1",[v[0].id_estadia]);
+      if(empresa[0]?.estado!=='aprobado') return res.status(409).json({ok:false,mensaje:'La empresa debe aprobar primero la memoria técnica.'});
+    }
     if(['biblioteca','laboratorios'].includes(area) && !est[0]?.memoria_final_ruta)
       return res.status(400).json({ok:false,mensaje:'El alumno todavía no tiene una memoria técnica final cargada.'});
     if(area==='centro_idiomas' && !v[0].ruta_archivo)
@@ -1452,6 +1608,8 @@ exports.generarEnlaceMemoriaEmpresa = async (req,res) => {
     const [own]=await db.query(`SELECT id_estadia,memoria_final_ruta FROM estadias WHERE id_estadia=? AND id_profesor=? LIMIT 1`,[idEstadia,req.usuario.id_usuario]);
     if(!own.length)return res.status(403).json({ok:false,mensaje:'Esta estadía no está asignada a tu cuenta.'});
     if(!own[0].memoria_final_ruta)return res.status(400).json({ok:false,mensaje:'El alumno todavía no ha subido la memoria técnica final.'});
+    const [finalEval]=await db.query("SELECT respondida_en FROM evaluaciones_empresa_estadia WHERE id_estadia=? AND momento='final' LIMIT 1",[idEstadia]);
+    if(!finalEval[0]?.respondida_en)return res.status(400).json({ok:false,mensaje:'La empresa debe completar primero la evaluación final del alumno antes de revisar la memoria técnica.'});
     const [actual]=await db.query(`SELECT token_publico FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='empresa_memoria' LIMIT 1`,[idEstadia]);
     const token=actual[0]?.token_publico || crypto.randomBytes(24).toString('hex');
     await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,token_publico,enviado_en)
@@ -1478,6 +1636,14 @@ exports.memoriasCierreEmpresa = async (req,res) => {
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar las memorias pendientes.'});}
 };
 
+async function habilitarValidacionesPosterioresEmpresa(idEstadia){
+  for(const area of ['biblioteca','laboratorios','direccion','vinculacion']){
+    await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en) VALUES(?,?,'en_revision',CURRENT_TIMESTAMP)
+      ON CONFLICT(id_estadia,area) DO UPDATE SET estado=CASE WHEN validaciones_cierre_estadia.estado='aprobado' THEN 'aprobado' ELSE 'en_revision' END,enviado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP`,[idEstadia,area]);
+  }
+  await db.query(`INSERT INTO eventos_notificacion_estadia(id_estadia,tipo,destinatarios,asunto,contexto) VALUES(?,'MEMORIA_EMPRESA_APROBADA','biblioteca,laboratorios,vinculacion,direccion,alumno,asesor','Memoria aprobada por empresa; inicia validación institucional','{}'::jsonb)`,[idEstadia]);
+}
+
 exports.resolverMemoriaEmpresaCuenta = async (req,res) => {
   if(!requireRoles(req,res,[3])) return;
   const estado=String(req.body.estado||'');
@@ -1491,7 +1657,7 @@ exports.resolverMemoriaEmpresaCuenta = async (req,res) => {
     await db.query(`UPDATE validaciones_cierre_estadia SET estado=?,observaciones=?,calificacion_memoria_empresa=?,revisado_por=?,revisado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_validacion=?`,
       [estado,req.body.observaciones||null,estado==='aprobado'?calificacion:null,req.usuario.id_usuario,req.params.id]);
     const [vv]=await db.query('SELECT id_estadia FROM validaciones_cierre_estadia WHERE id_validacion=?',[req.params.id]);
-    if(vv[0]) await recalcularExpediente(vv[0].id_estadia);
+    if(vv[0]){ if(estado==='aprobado') await habilitarValidacionesPosterioresEmpresa(vv[0].id_estadia); await recalcularExpediente(vv[0].id_estadia); }
     res.json({ok:true});
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo responder la validación de memoria.'});}
 };
@@ -1702,6 +1868,11 @@ exports.evaluarTomaProtesta = async (req,res) => {
 exports.cierreOverviewAdmin = async (req,res) => {
   if(!requireRoles(req,res,[1,10])) return;
   try{
+    const params=[]; let filtro='';
+    if(role(req)===10){
+      filtro=`WHERE EXISTS (SELECT 1 FROM administradores_estadia ae WHERE ae.id_usuario=? AND ae.activo=TRUE AND (ae.id_carrera IS NULL OR ae.id_carrera=g.id_carrera))`;
+      params.push(req.usuario.id_usuario);
+    }
     const [rows]=await db.query(`SELECT e.id_estadia,e.estado,e.cierre_solicitado_en,e.cierre_completado_en,u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre,
       COUNT(v.id_validacion) validaciones_total,
       COUNT(v.id_validacion) FILTER (WHERE v.estado='aprobado') validaciones_aprobadas,
@@ -1709,9 +1880,11 @@ exports.cierreOverviewAdmin = async (req,res) => {
       FROM estadias e JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN usuarios u ON u.id_usuario=e.id_estudiante
       JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
       LEFT JOIN validaciones_cierre_estadia v ON v.id_estadia=e.id_estadia LEFT JOIN tomas_protesta t ON t.id_estadia=e.id_estadia
-      GROUP BY e.id_estadia,u.nombre,u.apellido,es.matricula,g.nombre,p.nombre ORDER BY e.creada_en DESC`);
+      ${filtro}
+      GROUP BY e.id_estadia,u.nombre,u.apellido,es.matricula,g.nombre,p.nombre ORDER BY e.creada_en DESC`,params);
+    for(const row of rows) row.listo_toma=await cierreFinalAprobado(row.id_estadia);
     res.json({ok:true,cierres:rows});
-  }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo cargar el cierre institucional.'});}
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo cargar el cierre institucional.'});}
 };
 
 exports.cierresProfesor = async (req,res) => {
@@ -1725,6 +1898,7 @@ exports.cierresProfesor = async (req,res) => {
       JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
       LEFT JOIN validaciones_cierre_estadia v ON v.id_estadia=e.id_estadia LEFT JOIN tomas_protesta t ON t.id_estadia=e.id_estadia
       WHERE e.id_profesor=? GROUP BY e.id_estadia,u.nombre,u.apellido,es.matricula,g.nombre,p.nombre ORDER BY u.apellido,u.nombre`,[req.usuario.id_usuario]);
+    for(const row of rows) row.listo_toma=await cierreFinalAprobado(row.id_estadia);
     res.json({ok:true,cierres:rows});
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudieron cargar los cierres de tus alumnos.'});}
 };
@@ -1754,7 +1928,7 @@ exports.obtenerProyectoOficial = async (req,res) => {
   try{
     if(!(await asegurarAccesoEstadiaOficial(req,id,{profesor:true,admin:true}))) return res.status(403).json({ok:false,mensaje:'No tienes acceso a esta estadía.'});
     const [rows]=await db.query(`SELECT e.*,u.nombre alumno_nombre,u.apellido alumno_apellido,u.correo alumno_correo,u.telefono alumno_telefono,
-      es.matricula,COALESCE(c.nombre,es.carrera) carrera_nombre,g.nombre grupo_nombre,p.nombre periodo_nombre,
+      es.matricula,es.numero_seguro_social,COALESCE(c.nombre,es.carrera) carrera_nombre,g.nombre grupo_nombre,p.nombre periodo_nombre,
       CONCAT(up.nombre,' ',up.apellido) asesor_academico,up.correo asesor_correo,up.telefono asesor_telefono,
       up.cargo_institucional asesor_cargo,up.area_institucional asesor_area
       FROM estadias e JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
@@ -1803,14 +1977,17 @@ exports.subirComprobanteInicio = async (req,res) => {
   if(!requireRoles(req,res,[2])) return;
   if(!req.file)return res.status(400).json({ok:false,mensaje:'Selecciona un archivo.'});
   const tipo=String(req.params.tipo||'');
-  if(!['cuatrimestre','seguro_facultativo','inscripcion'].includes(tipo))return res.status(400).json({ok:false,mensaje:'Tipo de comprobante inválido.'});
+  if(!['seguro_facultativo','inscripcion'].includes(tipo))return res.status(400).json({ok:false,mensaje:'Tipo de comprobante inválido.'});
   try{
     const [e]=await db.query('SELECT id_estadia FROM estadias WHERE id_estudiante=? ORDER BY creada_en DESC LIMIT 1',[req.usuario.id_usuario]);
     if(!e.length)return res.status(400).json({ok:false,mensaje:'Primero registra los datos iniciales de tu estadía.'});
-    await db.query(`INSERT INTO comprobantes_inicio_estadia(id_estadia,tipo,numero_seguro,ruta_archivo,nombre_archivo,mime_type,estado,enviado_en)
-      VALUES(?,?,?,?,?,?,'en_revision',CURRENT_TIMESTAMP)
-      ON CONFLICT(id_estadia,tipo) DO UPDATE SET numero_seguro=EXCLUDED.numero_seguro,ruta_archivo=EXCLUDED.ruta_archivo,nombre_archivo=EXCLUDED.nombre_archivo,mime_type=EXCLUDED.mime_type,estado='en_revision',observaciones=NULL,revisado_por=NULL,revisado_en=NULL,enviado_en=CURRENT_TIMESTAMP`,
-      [e[0].id_estadia,tipo,tipo==='seguro_facultativo'?(req.body.numero_seguro||null):null,filePath(req.file),req.file.originalname,req.file.mimetype]);
+    const [actual]=await db.query('SELECT estado FROM comprobantes_inicio_estadia WHERE id_estadia=? AND tipo=? LIMIT 1',[e[0].id_estadia,tipo]);
+    if(actual.length && !['rechazado','requiere_correccion'].includes(actual[0].estado))
+      return res.status(409).json({ok:false,mensaje:'Este documento ya fue enviado. Solo puede reemplazarse cuando Servicios Escolares solicite una corrección o lo rechace.'});
+    await db.query(`INSERT INTO comprobantes_inicio_estadia(id_estadia,tipo,ruta_archivo,nombre_archivo,mime_type,estado,enviado_en)
+      VALUES(?,?,?,?,?,'en_revision',CURRENT_TIMESTAMP)
+      ON CONFLICT(id_estadia,tipo) DO UPDATE SET ruta_archivo=EXCLUDED.ruta_archivo,nombre_archivo=EXCLUDED.nombre_archivo,mime_type=EXCLUDED.mime_type,estado='en_revision',observaciones=NULL,revisado_por=NULL,revisado_en=NULL,enviado_en=CURRENT_TIMESTAMP`,
+      [e[0].id_estadia,tipo,filePath(req.file),req.file.originalname,req.file.mimetype]);
     await db.query(`INSERT INTO eventos_notificacion_estadia(id_estadia,tipo,destinatarios,asunto,contexto)
       VALUES(?,'COMPROBANTE_INICIO_ENVIADO','servicios_escolares','Comprobante inicial pendiente de revisión',?::jsonb)`,[e[0].id_estadia,JSON.stringify({tipo})]);
     res.json({ok:true,mensaje:'Comprobante enviado a Servicios Escolares.'});
@@ -1818,9 +1995,9 @@ exports.subirComprobanteInicio = async (req,res) => {
 };
 
 exports.comprobantesInicioServicios = async (req,res) => {
-  if(!requireRoles(req,res,[1,6,10])) return;
+  if(!requireRoles(req,res,[1,6])) return;
   try{
-    const [rows]=await db.query(`SELECT c.*,e.proyecto_titulo,u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre
+    const [rows]=await db.query(`SELECT c.*,e.proyecto_titulo,u.nombre,u.apellido,es.matricula,es.numero_seguro_social,g.nombre grupo_nombre,p.nombre periodo_nombre
       FROM comprobantes_inicio_estadia c JOIN estadias e ON e.id_estadia=c.id_estadia JOIN usuarios u ON u.id_usuario=e.id_estudiante
       JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN grupos_estadia g ON g.id_grupo=e.id_grupo JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
       ORDER BY CASE c.estado WHEN 'en_revision' THEN 0 ELSE 1 END,c.enviado_en DESC`);
@@ -1829,7 +2006,7 @@ exports.comprobantesInicioServicios = async (req,res) => {
 };
 
 exports.resolverComprobanteInicio = async (req,res) => {
-  if(!requireRoles(req,res,[1,6,10])) return;
+  if(!requireRoles(req,res,[1,6])) return;
   const estado=String(req.body.estado||'');
   if(!['aprobado','rechazado','requiere_correccion'].includes(estado))return res.status(400).json({ok:false,mensaje:'Estado inválido.'});
   try{
@@ -1848,7 +2025,7 @@ exports.datosDocumentoOficial = async (req,res) => {
     const permitido=await asegurarAccesoEstadiaOficial(req,id,{alumno:true,profesor:true,admin:true});
     if(!permitido && role(req)!==6)return res.status(403).json({ok:false,mensaje:'Sin permiso.'});
     const [x]=await db.query(`SELECT e.*,u.nombre alumno_nombre,u.apellido alumno_apellido,u.correo alumno_correo,u.telefono alumno_telefono,
-      es.matricula,COALESCE(c.nombre,es.carrera) carrera_nombre,g.nombre grupo_nombre,p.nombre periodo_nombre,p.fecha_inicio periodo_inicio,p.fecha_fin periodo_fin,
+      es.matricula,es.numero_seguro_social,COALESCE(c.nombre,es.carrera) carrera_nombre,g.nombre grupo_nombre,p.nombre periodo_nombre,p.fecha_inicio periodo_inicio,p.fecha_fin periodo_fin,
       CONCAT(up.nombre,' ',up.apellido) asesor_nombre,up.correo asesor_correo,up.telefono asesor_telefono,up.cargo_institucional asesor_cargo,
       sa.nombre super_nombre,sa.apellido super_apellido,sa.cargo_institucional super_cargo,sa.area_institucional super_area,sa.correo super_correo,sa.extension super_extension,sa.oficina super_oficina
       FROM estadias e JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
@@ -1875,7 +2052,7 @@ exports.datosDocumentoOficial = async (req,res) => {
       JOIN revisiones_avances_estadia r ON r.id_entrega=ea.id_entrega
       WHERE ea.id_estadia=? ORDER BY fa.numero_avance,r.revisado_en DESC) x`,[id]);
     const [empresaEval]=await db.query(`SELECT momento,codigo_final,promedio,respondida_en FROM evaluaciones_empresa_estadia WHERE id_estadia=? ORDER BY CASE momento WHEN 'inicial' THEN 1 ELSE 2 END`,[id]);
-    const datos={...x[0],numero_seguro:seguro[0]?.numero_seguro||null,validaciones,jurado,toma:toma[0]||null,
+    const datos={...x[0],numero_seguro:x[0]?.numero_seguro_social||seguro[0]?.numero_seguro||null,validaciones,jurado,toma:toma[0]||null,
       calificacion_asesor:promAsesor[0]?.promedio||null,evaluaciones_empresa:empresaEval};
     res.json({ok:true,datos,documentos:docs});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron preparar los datos del documento.'});}
@@ -1890,13 +2067,21 @@ exports.marcarDocumentoOficialGenerado = async (req,res) => {
     if(tipo==='carta_inicio'){
       const [c]=await db.query(`SELECT COUNT(*) total,COUNT(*) FILTER(WHERE estado='aprobado') aprobados FROM comprobantes_inicio_estadia WHERE id_estadia=?`,[id]);
       const [e]=await db.query('SELECT datos_oficiales_completos FROM estadias WHERE id_estadia=?',[id]);
-      if(Number(c[0]?.aprobados||0)<3 || !e[0]?.datos_oficiales_completos)return res.status(400).json({ok:false,mensaje:'Antes de generar la carta deben estar aprobados los 3 comprobantes y completo el expediente oficial.'});
+      if(Number(c[0]?.aprobados||0)<2 || !e[0]?.datos_oficiales_completos)return res.status(400).json({ok:false,mensaje:'Antes de generar la carta deben estar aprobados los 2 requisitos iniciales y completo el expediente oficial.'});
     }
     if(['carta_finalizacion','autorizacion_memoria'].includes(tipo)){
       const vals=await validacionesCierre(id);
-      const required=['biblioteca','laboratorios','centro_idiomas','servicios_escolares','empresa_memoria','direccion','vinculacion','datos_alumno','pago_titulo'];
+      const required=['empresa_memoria','biblioteca','laboratorios','centro_idiomas','servicios_escolares','direccion','vinculacion','datos_alumno','pago_titulo'];
       if(!required.every(a=>vals.some(v=>v.area===a&&v.estado==='aprobado')))
         return res.status(400).json({ok:false,mensaje:'Antes de liberar los documentos finales deben estar aprobados todos los requisitos institucionales.'});
+    }
+    if(tipo==='acta_toma_protesta'){
+      const [t]=await db.query('SELECT id_toma FROM tomas_protesta WHERE id_estadia=? LIMIT 1',[id]);
+      if(!t.length) return res.status(400).json({ok:false,mensaje:'Primero debe existir una toma de protesta programada.'});
+    }
+    if(tipo==='acta_final'){
+      const [e]=await db.query('SELECT estado FROM estadias WHERE id_estadia=? LIMIT 1',[id]);
+      if(e[0]?.estado!=='terminada') return res.status(400).json({ok:false,mensaje:'El acta final solo se libera cuando la estadía está terminada.'});
     }
     await db.query(`INSERT INTO documentos_oficiales_estadia(id_estadia,tipo,estado,generado_en,generado_por)
       VALUES(?,?,'generado',CURRENT_TIMESTAMP,?) ON CONFLICT(id_estadia,tipo) DO UPDATE SET estado=CASE WHEN documentos_oficiales_estadia.estado='firmado_validado' THEN documentos_oficiales_estadia.estado ELSE 'generado' END,generado_en=CURRENT_TIMESTAMP,generado_por=EXCLUDED.generado_por`,[id,tipo,req.usuario.id_usuario]);
@@ -1912,6 +2097,9 @@ exports.subirDocumentoOficialFirmado = async (req,res) => {
   const id=Number(req.params.idEstadia),tipo=String(req.params.tipo||'');
   try{
     if(!(await asegurarAccesoEstadiaOficial(req,id,{profesor:true,admin:true})))return res.status(403).json({ok:false,mensaje:'Sin permiso.'});
+    const [generado]=await db.query('SELECT estado FROM documentos_oficiales_estadia WHERE id_estadia=? AND tipo=? LIMIT 1',[id,tipo]);
+    if(!generado.length || generado[0].estado==='no_generado') return res.status(409).json({ok:false,mensaje:'Primero debes generar el documento antes de subir su versión firmada.'});
+    if(generado[0].estado==='firmado_validado') return res.status(409).json({ok:false,mensaje:'Este documento ya cuenta con una versión firmada validada.'});
     await db.query(`INSERT INTO documentos_oficiales_estadia(id_estadia,tipo,estado,ruta_firmado,nombre_firmado,mime_firmado,firmado_subido_en,firmado_subido_por,firmado_validado_por,firmado_validado_en)
       VALUES(?,?,'firmado_validado',?,?,?,CURRENT_TIMESTAMP,?,?,CURRENT_TIMESTAMP)
       ON CONFLICT(id_estadia,tipo) DO UPDATE SET estado='firmado_validado',ruta_firmado=EXCLUDED.ruta_firmado,nombre_firmado=EXCLUDED.nombre_firmado,mime_firmado=EXCLUDED.mime_firmado,firmado_subido_en=CURRENT_TIMESTAMP,firmado_subido_por=EXCLUDED.firmado_subido_por,firmado_validado_por=EXCLUDED.firmado_validado_por,firmado_validado_en=CURRENT_TIMESTAMP,observaciones=NULL`,
@@ -1966,15 +2154,17 @@ exports.procesarCorreosPendientes = async (req,res) => {
 };
 
 exports.tableroOficialEstadias = async (req,res) => {
-  if(!requireRoles(req,res,[1,4,5,6,10])) return;
+  if(!requireRoles(req,res,[1,2,4,5,6,10])) return;
   try{
     const params=[];let filtro='';
+    if(role(req)===2){filtro='WHERE e.id_estudiante=?';params.push(req.usuario.id_usuario);}
     if(role(req)===4){filtro='WHERE e.id_profesor=?';params.push(req.usuario.id_usuario);}
     if(role(req)===10){filtro=`WHERE EXISTS(SELECT 1 FROM administradores_estadia ae WHERE ae.id_usuario=? AND ae.activo=TRUE AND (ae.id_carrera IS NULL OR ae.id_carrera=g.id_carrera))`;params.push(req.usuario.id_usuario);}
     const [rows]=await db.query(`SELECT e.id_estadia,e.id_estudiante,e.estado,e.proyecto_titulo,e.empresa_razon_social,e.datos_oficiales_completos,
       u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,p.nombre periodo_nombre,
       COALESCE((SELECT COUNT(*) FROM comprobantes_inicio_estadia ci WHERE ci.id_estadia=e.id_estadia AND ci.estado='aprobado'),0) comprobantes_inicio_aprobados,
       COALESCE((SELECT estado FROM documentos_oficiales_estadia d WHERE d.id_estadia=e.id_estadia AND d.tipo='carta_inicio'),'no_generado') carta_inicio_estado,
+      COALESCE((SELECT ruta_firmado FROM documentos_oficiales_estadia d WHERE d.id_estadia=e.id_estadia AND d.tipo='carta_inicio'),NULL) carta_inicio_firmada,
       COALESCE((SELECT autorizado FROM inicio_formal_estadia i WHERE i.id_estadia=e.id_estadia),FALSE) inicio_formal,
       CASE WHEN EXISTS(SELECT 1 FROM evaluaciones_empresa_estadia ev WHERE ev.id_estadia=e.id_estadia AND ev.momento='inicial' AND ev.respondida_en IS NOT NULL) THEN 'aprobado' ELSE 'pendiente' END evaluacion_empresa_inicial,
       COALESCE((SELECT COUNT(DISTINCT fa.numero_avance) FROM entregas_avances_estadia ea JOIN fechas_avances_estadia fa ON fa.id_fecha_avance=ea.id_fecha_avance WHERE ea.id_estadia=e.id_estadia AND ea.estado='aprobado'),0) talleres_aprobados,
@@ -1993,7 +2183,9 @@ exports.tableroOficialEstadias = async (req,res) => {
       COALESCE((SELECT estado FROM validaciones_cierre_estadia v WHERE v.id_estadia=e.id_estadia AND v.area='pago_titulo'),'pendiente') pago_titulo,
       (SELECT id_validacion FROM validaciones_cierre_estadia v WHERE v.id_estadia=e.id_estadia AND v.area='pago_titulo') pago_titulo_id,
       COALESCE((SELECT estado FROM documentos_oficiales_estadia d WHERE d.id_estadia=e.id_estadia AND d.tipo='carta_finalizacion'),'no_generado') carta_final_estado,
+      COALESCE((SELECT ruta_firmado FROM documentos_oficiales_estadia d WHERE d.id_estadia=e.id_estadia AND d.tipo='carta_finalizacion'),NULL) carta_final_firmada,
       COALESCE((SELECT estado FROM documentos_oficiales_estadia d WHERE d.id_estadia=e.id_estadia AND d.tipo='autorizacion_memoria'),'no_generado') autorizacion_memoria_estado,
+      COALESCE((SELECT ruta_firmado FROM documentos_oficiales_estadia d WHERE d.id_estadia=e.id_estadia AND d.tipo='autorizacion_memoria'),NULL) autorizacion_memoria_firmada,
       COALESCE((SELECT estado FROM documentos_oficiales_estadia d WHERE d.id_estadia=e.id_estadia AND d.tipo='acta_toma_protesta'),'no_generado') acta_toma_estado,
       COALESCE((SELECT estado FROM tomas_protesta t WHERE t.id_estadia=e.id_estadia),'pendiente') toma_estado
       FROM estadias e JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
@@ -2020,8 +2212,13 @@ exports.subirPagoTitulo = async (req,res) => {
   if(!requireRoles(req,res,[2])) return;
   if(!req.file)return res.status(400).json({ok:false,mensaje:'Adjunta el comprobante de pago de título.'});
   try{
-    const [e]=await db.query('SELECT id_estadia FROM estadias WHERE id_estudiante=? ORDER BY creada_en DESC LIMIT 1',[req.usuario.id_usuario]);
+    const [e]=await db.query(`SELECT es.id_estadia,p.fecha_inicio_pago_titulo,p.fecha_fin_pago_titulo FROM estadias es JOIN periodos_estadia p ON p.id_periodo=es.id_periodo WHERE es.id_estudiante=? ORDER BY es.creada_en DESC LIMIT 1`,[req.usuario.id_usuario]);
     if(!e.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
+    const hoy=new Date();
+    if(e[0].fecha_inicio_pago_titulo && hoy<new Date(e[0].fecha_inicio_pago_titulo)) return res.status(400).json({ok:false,mensaje:'El periodo de pago de título todavía no inicia.'});
+    if(e[0].fecha_fin_pago_titulo && hoy>new Date(String(e[0].fecha_fin_pago_titulo)+'T23:59:59')) return res.status(400).json({ok:false,mensaje:'El periodo de pago de título ya terminó.'});
+    const [prev]=await db.query("SELECT estado FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='pago_titulo' LIMIT 1",[e[0].id_estadia]);
+    if(prev.length && !['rechazado','requiere_correccion'].includes(prev[0].estado)) return res.status(409).json({ok:false,mensaje:'El comprobante de pago de título ya fue enviado. Solo puede reemplazarse si Servicios Escolares solicita corrección.'});
     await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,ruta_archivo,nombre_archivo,mime_type,enviado_en)
       VALUES(?,'pago_titulo','en_revision',?,?,?,CURRENT_TIMESTAMP)
       ON CONFLICT(id_estadia,area) DO UPDATE SET estado='en_revision',ruta_archivo=EXCLUDED.ruta_archivo,nombre_archivo=EXCLUDED.nombre_archivo,mime_type=EXCLUDED.mime_type,observaciones=NULL,revisado_por=NULL,revisado_en=NULL,enviado_en=CURRENT_TIMESTAMP`,
@@ -2031,17 +2228,20 @@ exports.subirPagoTitulo = async (req,res) => {
 };
 
 exports.aprobacionesOficiales = async (req,res) => {
-  const r=role(req);if(![1,5,6,10].includes(r))return res.status(403).json({ok:false,mensaje:'Sin permiso.'});
+  const r=role(req);if(![1,5,6].includes(r))return res.status(403).json({ok:false,mensaje:'Sin permiso.'});
   let area=String(req.query.area||'');
   if(r===5)area='vinculacion';
   if(r===6)area='pago_titulo';
   if(r===1 && !area)area='direccion';
   if(!['direccion','vinculacion','pago_titulo'].includes(area))return res.status(400).json({ok:false,mensaje:'Área inválida.'});
   try{
-    const [rows]=await db.query(`SELECT v.*,u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,e.proyecto_titulo,e.empresa_razon_social
+    const [rows]=await db.query(`SELECT v.*,u.nombre,u.apellido,es.matricula,g.nombre grupo_nombre,e.proyecto_titulo,e.empresa_razon_social,e.memoria_final_ruta,e.memoria_final_nombre,
+      COALESCE((SELECT estado FROM validaciones_cierre_estadia em WHERE em.id_estadia=e.id_estadia AND em.area='empresa_memoria'),'pendiente') empresa_memoria_estado
       FROM validaciones_cierre_estadia v JOIN estadias e ON e.id_estadia=v.id_estadia JOIN usuarios u ON u.id_usuario=e.id_estudiante
       JOIN estudiantes es ON es.id_estudiante=e.id_estudiante JOIN grupos_estadia g ON g.id_grupo=e.id_grupo
-      WHERE v.area=? ORDER BY CASE v.estado WHEN 'en_revision' THEN 0 WHEN 'pendiente' THEN 1 ELSE 2 END,v.actualizado_en DESC`,[area]);
+      WHERE v.area=?
+        AND (v.area='pago_titulo' OR EXISTS (SELECT 1 FROM validaciones_cierre_estadia em WHERE em.id_estadia=e.id_estadia AND em.area='empresa_memoria' AND em.estado='aprobado'))
+      ORDER BY CASE v.estado WHEN 'en_revision' THEN 0 WHEN 'pendiente' THEN 1 ELSE 2 END,v.actualizado_en DESC`,[area]);
     res.json({ok:true,area,validaciones:rows});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar las aprobaciones.'});}
 };
@@ -2052,22 +2252,15 @@ exports.resolverAprobacionOficial = async (req,res) => {
   if(!permitido)return res.status(403).json({ok:false,mensaje:'No tienes permiso para esta aprobación.'});
   if(!['aprobado','rechazado','requiere_correccion'].includes(estado))return res.status(400).json({ok:false,mensaje:'Estado inválido.'});
   try{
+    if(['direccion','vinculacion'].includes(area)){
+      const [v]=await db.query('SELECT id_estadia FROM validaciones_cierre_estadia WHERE id_validacion=? AND area=? LIMIT 1',[req.params.id,area]);
+      if(!v.length) return res.status(404).json({ok:false,mensaje:'Validación no encontrada.'});
+      const [empresa]=await db.query("SELECT estado FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='empresa_memoria' LIMIT 1",[v[0].id_estadia]);
+      if(empresa[0]?.estado!=='aprobado') return res.status(409).json({ok:false,mensaje:'La empresa debe aprobar primero la memoria técnica.'});
+    }
     await db.query(`UPDATE validaciones_cierre_estadia SET estado=?,observaciones=?,revisado_por=?,revisado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_validacion=? AND area=?`,[estado,req.body.observaciones||null,req.usuario.id_usuario,req.params.id,area]);
     res.json({ok:true});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo guardar la aprobación.'});}
-};
-
-exports.crearSolicitudAprobacionesFinales = async (req,res) => {
-  if(!requireRoles(req,res,[1,4,10])) return;
-  const id=Number(req.params.idEstadia);
-  try{
-    if(!(await asegurarAccesoEstadiaOficial(req,id,{profesor:true,admin:true})))return res.status(403).json({ok:false,mensaje:'Sin permiso.'});
-    for(const area of ['direccion','vinculacion']){
-      await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en) VALUES(?,?,'en_revision',CURRENT_TIMESTAMP)
-        ON CONFLICT(id_estadia,area) DO UPDATE SET estado=CASE WHEN validaciones_cierre_estadia.estado='aprobado' THEN 'aprobado' ELSE 'en_revision' END,enviado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP`,[id,area]);
-    }
-    res.json({ok:true,mensaje:'Solicitudes de Dirección y Vinculación preparadas.'});
-  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron generar las solicitudes finales.'});}
 };
 
 exports.listarAdministradoresEstadia = async (req,res) => {

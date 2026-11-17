@@ -2,3 +2,11 @@
 
 /* V9.1 · Integración de correo */
 .fo-mail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}.fo-mail-head small{display:block;font-size:11px;font-weight:800;letter-spacing:.08em;color:#2563eb;margin-bottom:4px}.fo-mail-head h3{margin:0}.fo-mail-state{display:inline-flex;align-items:center;border-radius:999px;padding:7px 11px;font-size:12px;font-weight:800;white-space:nowrap}.fo-mail-state.ready{background:#dcfce7;color:#166534}.fo-mail-state.pending{background:#fff7ed;color:#9a3412}.fo-mail-attachment{display:flex;justify-content:space-between;gap:16px;padding:12px 14px;border:1px solid #dbe5f1;background:#f8fbff;border-radius:12px;margin:12px 0}.fo-mail-attachment span{text-transform:capitalize;color:#475569}
+
+/* V9.2 · Tablero de avance realmente utilizable */
+.fo-table-wrap{max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
+.fo-table-wrap::-webkit-scrollbar{height:10px}.fo-table-wrap::-webkit-scrollbar-thumb{background:#9fb2c5;border-radius:999px}.fo-table-wrap::-webkit-scrollbar-track{background:#edf2f7;border-radius:999px}
+.fo-table.green th:first-child,.fo-table.green td:first-child{position:sticky;left:0;z-index:3;background:#fff;box-shadow:1px 0 0 #dfe7ef}.fo-table.green th:first-child{background:#4f7f43;color:#fff;z-index:4}
+.fo-board-toolbar{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:14px}.fo-board-toolbar label{display:grid;gap:6px;min-width:200px}.fo-board-toolbar input,.fo-board-toolbar select{width:100%;box-sizing:border-box;border:1px solid #cdd8e4;border-radius:10px;padding:10px 12px;background:#fff}
+.fo-next-step{display:grid;gap:4px;min-width:150px}.fo-next-step strong{color:#123b64}.fo-next-step small{color:#66788a;line-height:1.35}.fo-document-row.locked{opacity:.62;background:#f8fafc}.fo-empty-state{padding:28px;text-align:center;color:#66788a}
+@media(max-width:700px){.fo-hero{padding:18px}.fo-hero h2{font-size:23px}.fo-card{padding:16px}.fo-table.green{min-width:1450px}.fo-board-toolbar{align-items:stretch;flex-direction:column}.fo-board-toolbar label{min-width:0;width:100%}.fo-modal-bg{padding:8px}.fo-modal{width:100%;max-height:96vh;border-radius:14px}.fo-modal-head,.fo-modal-body{padding:16px}.fo-summary{grid-template-columns:1fr}.fo-summary b{margin-top:4px}}

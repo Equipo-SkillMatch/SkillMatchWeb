@@ -56,6 +56,7 @@ const textAreaFields = new Set(['proyecto_competencia_impacto', 'proyecto_objeti
 export default function FlujoOficialEstadia({ role }) {
   const [busy, setBusy] = useState(true);
   const [board, setBoard] = useState([]);
+  const [flowRow, setFlowRow] = useState(null);
   const [student, setStudent] = useState({ contexto: null, estadia: null });
   const [form, setForm] = useState({ proyecto_titulo: '', empresa_rfc: '', empresa_razon_social: '' });
   const [empresa, setEmpresa] = useState(null);
@@ -64,7 +65,6 @@ export default function FlujoOficialEstadia({ role }) {
   const [entrada, setEntrada] = useState('08:00');
   const [salida, setSalida] = useState('17:00');
   const [comps, setComps] = useState([]);
-  const [numeroSeguro, setNumeroSeguro] = useState('');
   const [queue, setQueue] = useState([]);
   const [titleQueue, setTitleQueue] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -85,11 +85,13 @@ export default function FlujoOficialEstadia({ role }) {
     setBusy(true);
     try {
       if (role === 2) {
-        const [ctx, mi, co] = await Promise.all([
-          api('/registro/contexto'), api('/mi-estadia'), api('/mi-estadia/comprobantes-inicio').catch(() => ({ comprobantes: [] }))
+        const [ctx, mi, co, tb] = await Promise.all([
+          api('/registro/contexto'), api('/mi-estadia'), api('/mi-estadia/comprobantes-inicio').catch(() => ({ comprobantes: [] })),
+          api('/tablero-oficial').catch(() => ({ filas: [] }))
         ]);
         setStudent({ contexto: ctx.contexto, estadia: mi.estadia });
         setComps(co.comprobantes || []);
+        setFlowRow((tb.filas || [])[0] || null);
         if (mi.estadia) {
           setForm({
             proyecto_titulo: mi.estadia.proyecto_titulo || '',
@@ -164,7 +166,6 @@ export default function FlujoOficialEstadia({ role }) {
     if (!file) return;
     const fd = new FormData();
     fd.append('archivo', file);
-    if (tipo === 'seguro_facultativo' && numeroSeguro) fd.append('numero_seguro', numeroSeguro);
     try {
       await api(`/mi-estadia/comprobantes-inicio/${tipo}`, { method: 'POST', body: fd });
       toast('Comprobante enviado a Servicios Escolares.');
@@ -241,14 +242,6 @@ export default function FlujoOficialEstadia({ role }) {
       await api(`/profesor/estadias/${selected.id_estadia}/proyecto-oficial`, { method: 'PUT', body: JSON.stringify(official) });
       toast('Expediente oficial guardado.');
       await openOfficial(selected);
-      await load();
-    } catch (error) { toast(error.message, 'error'); }
-  }
-
-  async function requestFinalApprovals() {
-    try {
-      const result = await api(`/profesor/estadias/${selected.id_estadia}/solicitar-aprobaciones-finales`, { method: 'POST', body: '{}' });
-      toast(result.mensaje);
       await load();
     } catch (error) { toast(error.message, 'error'); }
   }
@@ -442,7 +435,7 @@ export default function FlujoOficialEstadia({ role }) {
     return <StudentView
       student={student} form={form} setForm={setForm} empresa={empresa} manualEmpresa={manualEmpresa}
       buscarRFC={buscarRFC} saveInitial={saveInitial} dias={dias} setDias={setDias} entrada={entrada} setEntrada={setEntrada}
-      salida={salida} setSalida={setSalida} comps={comps} numeroSeguro={numeroSeguro} setNumeroSeguro={setNumeroSeguro}
+      salida={salida} setSalida={setSalida} comps={comps} flowRow={flowRow}
       uploadComp={uploadComp} confirmTitleData={confirmTitleData} uploadTitlePayment={uploadTitlePayment}
     />;
   }
@@ -455,58 +448,116 @@ export default function FlujoOficialEstadia({ role }) {
     role={role} board={board} resolveArea={resolveArea} openOfficial={openOfficial}
     admins={admins} carreras={carreras} adminForm={adminForm} setAdminForm={setAdminForm} saveAdmin={saveAdmin} toggleAdmin={toggleAdmin}
     selected={selected} setSelected={setSelected} official={official} setOfficial={setOfficial} saveOfficial={saveOfficial}
-    requestFinalApprovals={requestFinalApprovals} docs={docs} docState={docState} signedDoc={signedDoc} genDoc={genDoc}
-    uploadSigned={uploadSigned} mail={mail} setMail={setMail} prepareMail={prepareMail} authorizeFormalStart={authorizeFormalStart}
+    docs={docs} docState={docState} signedDoc={signedDoc} genDoc={genDoc}
+    uploadSigned={uploadSigned} mail={mail} setMail={setMail} prepareMail={prepareMail} mailConfig={mailConfig} authorizeFormalStart={authorizeFormalStart}
   />;
+}
+
+function MiniDocState({ value, signed }) {
+  const generated = value && value !== 'no_generado';
+  return <div className="fo-doc-state-stack"><span className={generated ? 'done' : ''}>Generada {generated ? '✓' : '○'}</span><span className={signed ? 'done' : ''}>Firmada {signed ? '✓' : '○'}</span></div>;
+}
+
+function StudentProgress({ row }) {
+  if (!row) return null;
+  const cells = [
+    ['Documentos', Number(row.comprobantes_inicio_aprobados) >= 2 ? 'aprobado' : `${row.comprobantes_inicio_aprobados || 0}/2`],
+    ['Expediente', row.datos_oficiales_completos ? 'aprobado' : 'pendiente'],
+    ['Carta inicio', row.carta_inicio_firmada ? 'aprobado' : row.carta_inicio_estado],
+    ['Inicio formal', row.inicio_formal ? 'aprobado' : 'pendiente'],
+    ['Eval. empresa 1', row.evaluacion_empresa_inicial],
+    ['Talleres', Number(row.talleres_aprobados) >= 3 ? 'aprobado' : `${row.talleres_aprobados || 0}/3`],
+    ['Eval. empresa 2', row.evaluacion_empresa_final],
+    ['Memoria', row.memoria_final_ruta ? 'aprobado' : 'pendiente'],
+    ['Empresa memoria', row.empresa_memoria], ['Biblioteca', row.biblioteca], ['Laboratorios', row.laboratorios],
+    ['Dirección', row.direccion], ['Vinculación', row.vinculacion], ['Donativo', row.donativo], ['Inglés', row.ingles],
+    ['Datos título', row.datos_alumno], ['Pago título', row.pago_titulo], ['Carta final', row.carta_final_firmada ? 'aprobado' : row.carta_final_estado],
+    ['Autorización', row.autorizacion_memoria_firmada ? 'aprobado' : row.autorizacion_memoria_estado], ['Toma', row.toma_estado]
+  ];
+  return <div className="fo-card"><div className="fo-card-title"><div><small>MI RUTA</small><h3>Avance de mi estadía</h3></div></div><div className="fo-progress-grid">{cells.map(([label,value])=><div className="fo-progress-item" key={label}><span>{label}</span><Status value={value}/></div>)}</div></div>;
 }
 
 function StudentView(props) {
   const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-  const { student, form, setForm, empresa, manualEmpresa, buscarRFC, saveInitial, dias, setDias, entrada, setEntrada, salida, setSalida, comps, numeroSeguro, setNumeroSeguro, uploadComp, confirmTitleData, uploadTitlePayment } = props;
+  const { student, form, setForm, empresa, manualEmpresa, buscarRFC, saveInitial, dias, setDias, entrada, setEntrada, salida, setSalida, comps, flowRow, uploadComp, confirmTitleData, uploadTitlePayment } = props;
+  const registroGuardado = Boolean(student.estadia);
   return <div className="fo-wrap">
-    <div className="fo-hero"><span>PASO 1 · REGISTRO INICIAL</span><h2>Comienza tu estadía</h2><p>Solo necesitas registrar el proyecto, buscar la empresa por RFC y capturar tu horario laboral.</p></div>
+    <div className="fo-hero"><span>PASO A PASO · ESTADÍA</span><h2>Mi estadía profesional</h2><p>SkillMatch te mostrará únicamente lo que corresponde a tu etapa actual y marcará automáticamente cada avance.</p></div>
     {!student.contexto ? <div className="fo-card"><h3>Aún no tienes un grupo de estadía asignado</h3><p>El administrador debe agregarte a un grupo antes de iniciar.</p></div> : <>
-      <div className="fo-card">
-        <div className="fo-card-title"><div><small>{student.contexto.grupo_nombre} · {student.contexto.periodo_nombre}</small><h3>Datos iniciales</h3></div>{student.estadia && <Status value="registrado" />}</div>
+      {!registroGuardado ? <div className="fo-card">
+        <div className="fo-card-title"><div><small>{student.contexto.grupo_nombre} · {student.contexto.periodo_nombre}</small><h3>Registro inicial</h3></div></div>
         <form className="fo-form" onSubmit={saveInitial}>
           <Field label="Nombre del proyecto" full><input value={form.proyecto_titulo} onChange={e => setForm({ ...form, proyecto_titulo: e.target.value })} required /></Field>
           <Field label="RFC de la empresa"><div className="fo-inline"><input value={form.empresa_rfc} onChange={e => setForm({ ...form, empresa_rfc: e.target.value.toUpperCase() })} required /><button type="button" onClick={buscarRFC}>Buscar RFC</button></div></Field>
-          <Field label="Empresa"><input value={form.empresa_razon_social} readOnly={Boolean(empresa)} onChange={e => setForm({ ...form, empresa_razon_social: e.target.value })} placeholder={manualEmpresa ? 'Escribe el nombre de la empresa' : 'Busca primero por RFC'} />{empresa && <small className="fo-found">✓ Empresa encontrada: {empresa.razon_social}</small>}</Field>
+          <Field label="Empresa"><input value={form.empresa_razon_social} readOnly={Boolean(empresa)} onChange={e => setForm({ ...form, empresa_razon_social: e.target.value })} placeholder={manualEmpresa ? 'Escribe el nombre de la empresa' : 'Busca primero por RFC'} required />{empresa && <small className="fo-found">✓ Empresa encontrada: {empresa.razon_social}</small>}</Field>
           <div className="full"><span className="fo-label">Horario laboral</span><div className="fo-days">{days.map(day => <button type="button" key={day} className={dias.includes(day) ? 'active' : ''} onClick={() => setDias(v => v.includes(day) ? v.filter(x => x !== day) : [...v, day])}>{day.slice(0, 3)}</button>)}</div><div className="fo-times"><input type="time" value={entrada} onChange={e => setEntrada(e.target.value)} /><span>a</span><input type="time" value={salida} onChange={e => setSalida(e.target.value)} /></div></div>
           <button className="fo-primary">Guardar registro inicial</button>
         </form>
-      </div>
-      {student.estadia && <>
-        <div className="fo-card"><div className="fo-card-title"><div><small>PASO 2 · SERVICIOS ESCOLARES</small><h3>Comprobantes previos</h3></div><span>{comps.filter(x => x.estado === 'aprobado').length}/3 aprobados</span></div><div className="fo-doc-grid">
-          <DocUploadCard tipo="cuatrimestre" nombre="Pago del cuatrimestre" comps={comps} uploadComp={uploadComp} />
-          <DocUploadCard tipo="seguro_facultativo" nombre="Seguro facultativo" comps={comps} uploadComp={uploadComp} extra={<input placeholder="Número de seguro facultativo" value={numeroSeguro} onChange={e => setNumeroSeguro(e.target.value)} />} />
-          <DocUploadCard tipo="inscripcion" nombre="Comprobante de inscripción" comps={comps} uploadComp={uploadComp} />
+      </div> : <div className="fo-card fo-saved-card"><div><small>PASO 1 COMPLETADO</small><h3>✓ Tu información inicial ha sido guardada correctamente</h3><p><b>{student.estadia.proyecto_titulo}</b> · {student.estadia.empresa_razon_social || 'Empresa pendiente de completar por el asesor'} · {student.estadia.horario_laboral}</p></div></div>}
+      {registroGuardado && <>
+        <StudentProgress row={flowRow}/>
+        <div className="fo-card"><div className="fo-card-title"><div><small>PASO 2 · SERVICIOS ESCOLARES</small><h3>Documentación inicial</h3></div><span>{comps.filter(x => x.estado === 'aprobado').length}/2 aprobados</span></div><p className="fo-help">El pago de inscripción y el pago del cuatrimestre se manejan como un solo requisito. Tu número de seguro social lo administra Servicios Escolares.</p><div className="fo-doc-grid">
+          <DocUploadCard tipo="inscripcion" nombre="Inscripción / pago de cuatrimestre" comps={comps} uploadComp={uploadComp} />
+          <DocUploadCard tipo="seguro_facultativo" nombre="Comprobante de seguro facultativo" comps={comps} uploadComp={uploadComp} />
         </div></div>
-        <div className="fo-card"><div className="fo-card-title"><div><small>CIERRE · TITULACIÓN</small><h3>Datos y pago de título</h3></div></div><div className="fo-doc-grid"><div className="fo-doc"><strong>Visto bueno de datos personales</strong><p>Cuando llegues a este paso confirma que tu nombre y datos estén correctos para los documentos oficiales.</p><button className="fo-primary" onClick={confirmTitleData}>Confirmar mis datos</button></div><div className="fo-doc"><strong>Pago de título</strong><p>Sube el comprobante cuando Servicios Escolares habilite esta etapa.</p><label className="fo-upload">Subir comprobante<input type="file" accept="application/pdf,image/*" onChange={e => uploadTitlePayment(e.target.files?.[0])} /></label></div></div></div>
+        {flowRow?.empresa_memoria === 'aprobado' && <div className="fo-card"><div className="fo-card-title"><div><small>CIERRE · TITULACIÓN</small><h3>Datos y pago de título</h3></div></div><div className="fo-doc-grid"><div className="fo-doc"><strong>Visto bueno de datos personales</strong><p>Confirma tus datos cuando las validaciones institucionales hayan avanzado.</p><button className="fo-primary" onClick={confirmTitleData}>Confirmar mis datos</button></div><div className="fo-doc"><strong>Pago de título</strong><p>El botón solo debe usarse dentro del periodo habilitado por Servicios Escolares.</p><label className="fo-upload">Subir comprobante<input type="file" accept="application/pdf,image/*" onChange={e => uploadTitlePayment(e.target.files?.[0])} /></label></div></div></div>}
       </>}
     </>}
   </div>;
 }
 
-function DocUploadCard({ tipo, nombre, comps, uploadComp, extra = null }) {
+function DocUploadCard({ tipo, nombre, comps, uploadComp }) {
   const item = comps.find(x => x.tipo === tipo);
-  return <div className="fo-doc"><strong>{nombre}</strong><Status value={item?.estado || 'pendiente'} />{item?.observaciones && <p>{item.observaciones}</p>}{item?.ruta_archivo && <a href={buildFileUrl(item.ruta_archivo)} target="_blank" rel="noreferrer">Ver comprobante</a>}{extra}<label className="fo-upload">{item ? 'Reemplazar archivo' : 'Subir archivo'}<input type="file" accept="application/pdf,image/*" onChange={e => uploadComp(tipo, e.target.files?.[0])} /></label></div>;
+  const allowUpload = !item || ['rechazado','requiere_correccion'].includes(item.estado);
+  return <div className="fo-doc"><strong>{nombre}</strong><Status value={item?.estado || 'pendiente'} />{item?.observaciones && <p className="fo-observation">{item.observaciones}</p>}{item?.ruta_archivo && <a href={buildFileUrl(item.ruta_archivo)} target="_blank" rel="noreferrer">Ver comprobante</a>}{allowUpload ? <label className="fo-upload">{item ? 'Subir corrección' : 'Subir archivo'}<input type="file" accept="application/pdf,image/*" onChange={e => uploadComp(tipo, e.target.files?.[0])} /></label> : <small className="fo-waiting">{item?.estado === 'aprobado' ? 'Documento aprobado' : 'En espera de revisión por Servicios Escolares'}</small>}</div>;
 }
 
 function ServicesView({ queue, titleQueue, resolveComp, resolveArea }) {
-  return <div className="fo-wrap"><div className="fo-hero"><span>SERVICIOS ESCOLARES</span><h2>Validación documental</h2><p>Aprueba los comprobantes que desbloquean el inicio formal y, al final del proceso, el pago de titulación.</p></div>
-    <div className="fo-card"><h3>Comprobantes de inicio</h3><div className="fo-table-wrap"><table className="fo-table"><thead><tr><th>Alumno</th><th>Grupo</th><th>Documento</th><th>Estado</th><th>Archivo</th><th>Acciones</th></tr></thead><tbody>{queue.map(item => <tr key={item.id_comprobante}><td><b>{item.nombre} {item.apellido}</b><small>{item.matricula}</small></td><td>{item.grupo_nombre}</td><td>{human(item.tipo)}</td><td><Status value={item.estado} /></td><td><a href={buildFileUrl(item.ruta_archivo)} target="_blank" rel="noreferrer">Abrir</a></td><td><div className="fo-actions"><button onClick={() => resolveComp(item, 'aprobado')}>Aprobar</button><button onClick={() => resolveComp(item, 'requiere_correccion')}>Corrección</button><button className="danger" onClick={() => resolveComp(item, 'rechazado')}>Rechazar</button></div></td></tr>)}</tbody></table></div></div>
+  const [search,setSearch]=useState('');
+  const [showApproved,setShowApproved]=useState(false);
+  const grouped=Object.values(queue.reduce((acc,item)=>{const key=item.id_estadia;acc[key]??={id_estadia:key,nombre:item.nombre,apellido:item.apellido,matricula:item.matricula,grupo_nombre:item.grupo_nombre,docs:{}};acc[key].docs[item.tipo]=item;return acc;},{}));
+  const filtered=grouped.filter(x=>`${x.nombre} ${x.apellido} ${x.matricula} ${x.grupo_nombre}`.toLowerCase().includes(search.toLowerCase()) && (showApproved ? Object.values(x.docs).every(d=>d.estado==='aprobado') : !Object.values(x.docs).every(d=>d.estado==='aprobado')));
+  const renderDoc=(item,label)=> item ? <div className="fo-service-doc"><b>{label}</b><Status value={item.estado}/><a href={buildFileUrl(item.ruta_archivo)} target="_blank" rel="noreferrer">Abrir</a>{['en_revision','pendiente'].includes(item.estado)&&<div className="fo-actions"><button onClick={()=>resolveComp(item,'aprobado')}>Aprobar</button><button onClick={()=>resolveComp(item,'requiere_correccion')}>Corrección</button><button className="danger" onClick={()=>resolveComp(item,'rechazado')}>Rechazar</button></div>}</div> : <div className="fo-service-doc"><b>{label}</b><Status value="pendiente"/><small>Sin archivo</small></div>;
+  return <div className="fo-wrap"><div className="fo-hero"><span>SERVICIOS ESCOLARES</span><h2>Validación documental</h2><p>Una fila por alumno, con búsqueda y separación entre pendientes y expedientes ya aprobados.</p></div>
+    <div className="fo-card"><div className="fo-board-toolbar"><input placeholder="Buscar por nombre, matrícula o grupo…" value={search} onChange={e=>setSearch(e.target.value)}/><div className="fo-segment"><button className={!showApproved?'active':''} onClick={()=>setShowApproved(false)}>Pendientes</button><button className={showApproved?'active':''} onClick={()=>setShowApproved(true)}>Aprobados</button></div></div><div className="fo-service-list">{filtered.map(x=><article className="fo-service-student" key={x.id_estadia}><header><div><b>{x.nombre} {x.apellido}</b><small>{x.matricula} · {x.grupo_nombre}</small></div></header><div className="fo-service-docs">{renderDoc(x.docs.inscripcion,'Inscripción / cuatrimestre')}{renderDoc(x.docs.seguro_facultativo,'Seguro facultativo')}</div></article>)}{!filtered.length&&<p className="fo-empty">No hay alumnos en esta sección.</p>}</div></div>
     <div className="fo-card"><h3>Pago de título</h3><div className="fo-table-wrap"><table className="fo-table"><thead><tr><th>Alumno</th><th>Grupo</th><th>Estado</th><th>Comprobante</th><th>Acciones</th></tr></thead><tbody>{titleQueue.map(item => <tr key={item.id_validacion}><td><b>{item.nombre} {item.apellido}</b><small>{item.matricula}</small></td><td>{item.grupo_nombre}</td><td><Status value={item.estado} /></td><td>{item.ruta_archivo ? <a href={buildFileUrl(item.ruta_archivo)} target="_blank" rel="noreferrer">Abrir</a> : '—'}</td><td><div className="fo-actions"><button onClick={() => resolveArea(item.id_validacion, 'pago_titulo', 'aprobado')}>Aprobar</button><button onClick={() => resolveArea(item.id_validacion, 'pago_titulo', 'requiere_correccion')}>Corrección</button><button className="danger" onClick={() => resolveArea(item.id_validacion, 'pago_titulo', 'rechazado')}>Rechazar</button></div></td></tr>)}</tbody></table></div></div>
   </div>;
 }
 
+function professorNextStep(row) {
+  if (!row.datos_oficiales_completos) return 'Completar expediente';
+  if (row.carta_inicio_estado === 'no_generado') return 'Generar carta de inicio';
+  if (!row.carta_inicio_firmada) return 'Subir carta de inicio firmada';
+  if (!row.inicio_formal) return 'Autorizar inicio formal';
+  if (row.evaluacion_empresa_inicial !== 'aprobado') return 'Esperando evaluación inicial de empresa';
+  if (Number(row.talleres_aprobados || 0) < 3) return `Talleres ${row.talleres_aprobados || 0}/3`;
+  if (row.evaluacion_empresa_final !== 'aprobado') return 'Esperando evaluación final de empresa';
+  if (!row.memoria_final_ruta) return 'Esperando memoria técnica';
+  if (row.empresa_memoria !== 'aprobado') return 'Empresa debe aprobar la memoria';
+  if (['biblioteca','laboratorios','direccion','vinculacion'].some(k => row[k] !== 'aprobado')) return 'Validaciones institucionales en proceso';
+  if (['donativo','ingles','datos_alumno','pago_titulo'].some(k => row[k] !== 'aprobado')) return 'Requisitos de titulación en proceso';
+  if (row.carta_final_estado === 'no_generado') return 'Generar carta de finalización';
+  if (!row.carta_final_firmada) return 'Subir carta final firmada';
+  if (row.autorizacion_memoria_estado === 'no_generado') return 'Generar autorización de memoria';
+  if (!row.autorizacion_memoria_firmada) return 'Subir autorización firmada';
+  if (row.toma_estado === 'pendiente') return 'Programar toma de protesta';
+  if (row.estado === 'terminada') return 'Estadía terminada';
+  return 'Dar seguimiento a toma de protesta';
+}
+
 function BoardView(props) {
-  const { role, board, resolveArea, openOfficial, admins, carreras, adminForm, setAdminForm, saveAdmin, toggleAdmin, selected, setSelected, official, setOfficial, saveOfficial, requestFinalApprovals, docs, docState, signedDoc, genDoc, uploadSigned, mail, setMail, prepareMail, authorizeFormalStart } = props;
+  const { role, board, resolveArea, openOfficial, admins, carreras, adminForm, setAdminForm, saveAdmin, toggleAdmin, selected, setSelected, official, setOfficial, saveOfficial, docs, docState, signedDoc, genDoc, uploadSigned, mail, setMail, prepareMail, mailConfig, authorizeFormalStart } = props;
+  const [search,setSearch]=useState(''); const [group,setGroup]=useState('');
+  const groups=[...new Set(board.map(x=>x.grupo_nombre).filter(Boolean))];
+  const filtered=board.filter(row=>`${row.nombre} ${row.apellido} ${row.matricula} ${row.proyecto_titulo||''}`.toLowerCase().includes(search.toLowerCase())&&(!group||row.grupo_nombre===group));
+  const title=role===4?'Expedientes de mis alumnos':role===5?'Revisión de memoria · Vinculación':role===10?'Control de mi carrera':'Control institucional';
   return <div className="fo-wrap">
-    <div className="fo-hero"><span>FLUJO OFICIAL DE ESTADÍAS</span><h2>{role === 4 ? 'Expedientes de mis alumnos' : role === 5 ? 'Aprobación de Vinculación' : 'Control institucional'}</h2><p>Seguimiento automático basado en los requisitos oficiales. Cada columna se actualiza cuando el responsable aprueba su paso.</p></div>
+    <div className="fo-hero"><span>FLUJO OFICIAL DE ESTADÍAS</span><h2>{title}</h2><p>La ruta se alimenta automáticamente. Los documentos muestran por separado si ya fueron generados y si ya se subió la versión firmada.</p></div>
     {role === 1 && <AdminManager admins={admins} carreras={carreras} form={adminForm} setForm={setAdminForm} save={saveAdmin} toggle={toggleAdmin} />}
-    <div className="fo-card"><div className="fo-table-wrap"><table className="fo-table green"><thead><tr><th>Alumno</th><th>Grupo</th><th>Docs inicio</th><th>Expediente</th><th>Carta inicio</th><th>Inicio formal</th><th>Eval. empresa 1</th><th>Talleres</th><th>Eval. empresa 2</th><th>Memoria</th><th>Biblioteca</th><th>Labs</th><th>Empresa</th><th>Donativo</th><th>Inglés</th><th>Dirección</th><th>Vinculación</th><th>Datos título</th><th>Pago título</th><th>Carta final</th><th>Autorización memoria</th><th>Toma</th><th></th></tr></thead><tbody>{board.map(row => <tr key={row.id_estadia}><td><b>{row.nombre} {row.apellido}</b><small>{row.matricula}</small></td><td>{row.grupo_nombre}</td><td><Status value={Number(row.comprobantes_inicio_aprobados) >= 3 ? 'aprobado' : `${row.comprobantes_inicio_aprobados}/3`} /></td><td><Status value={row.datos_oficiales_completos ? 'aprobado' : 'pendiente'} /></td><td><Status value={row.carta_inicio_estado} /></td><td><Status value={row.inicio_formal ? 'aprobado' : 'pendiente'} /></td><td><Status value={row.evaluacion_empresa_inicial} /></td><td><Status value={Number(row.talleres_aprobados) >= 3 ? 'aprobado' : `${row.talleres_aprobados}/3`} /></td><td><Status value={row.evaluacion_empresa_final} /></td><td><Status value={row.memoria_final_ruta ? 'aprobado' : 'pendiente'} /></td><td><Status value={row.biblioteca} /></td><td><Status value={row.laboratorios} /></td><td><Status value={row.empresa_memoria} /></td><td><Status value={row.donativo} /></td><td><Status value={row.ingles} /></td><td><Status value={row.direccion} /></td><td><Status value={row.vinculacion} /></td><td><Status value={row.datos_alumno} /></td><td><Status value={row.pago_titulo} /></td><td><Status value={row.carta_final_estado} /></td><td><Status value={row.autorizacion_memoria_estado} /></td><td><Status value={row.toma_estado} /></td><td><div className="fo-actions">{role === 4 && <button className="fo-link" onClick={() => openOfficial(row)}>Expediente</button>}{role === 1 && row.direccion_id && row.direccion !== 'aprobado' && <button onClick={() => resolveArea(row.direccion_id, 'direccion')}>Aprobar Dirección</button>}{role === 5 && row.vinculacion_id && row.vinculacion !== 'aprobado' && <button onClick={() => resolveArea(row.vinculacion_id, 'vinculacion')}>Aprobar Vinculación</button>}</div></td></tr>)}</tbody></table></div></div>
-    {selected && official && <OfficialModal selected={selected} setSelected={setSelected} official={official} setOfficial={setOfficial} saveOfficial={saveOfficial} requestFinalApprovals={requestFinalApprovals} docState={docState} signedDoc={signedDoc} genDoc={genDoc} uploadSigned={uploadSigned} setMail={setMail} authorizeFormalStart={authorizeFormalStart} />}
+    <div className="fo-card"><div className="fo-board-toolbar"><input placeholder="Buscar nombre, matrícula o proyecto…" value={search} onChange={e=>setSearch(e.target.value)}/><select value={group} onChange={e=>setGroup(e.target.value)}><option value="">Todos los grupos</option>{groups.map(g=><option key={g}>{g}</option>)}</select><strong>{filtered.length} alumnos</strong></div>
+      {role===5&&filtered.length===0&&<div className="fo-empty-state"><b>No hay memorias pendientes de Vinculación.</b><span>Los alumnos aparecerán automáticamente cuando la empresa haya aprobado primero su memoria técnica.</span></div>}
+      <div className="fo-table-wrap fo-official-table"><table className="fo-table green"><thead><tr><th className="sticky-col">Alumno</th><th>Grupo</th><th>Docs inicio</th><th>Expediente</th><th>Carta inicio</th><th>Inicio formal</th><th>Eval. empresa 1</th><th>Talleres</th><th>Eval. empresa 2</th><th>Memoria</th><th>Empresa</th><th>Biblioteca</th><th>Labs</th><th>Dirección</th><th>Vinculación</th><th>Donativo</th><th>Inglés</th><th>Datos título</th><th>Pago título</th><th>Carta final</th><th>Autorización</th><th>Toma</th><th>Acción actual</th></tr></thead><tbody>{filtered.map(row => <tr key={row.id_estadia}><td className="sticky-col"><b>{row.nombre} {row.apellido}</b><small>{row.matricula}</small></td><td>{row.grupo_nombre}</td><td><Status value={Number(row.comprobantes_inicio_aprobados)>=2?'aprobado':`${row.comprobantes_inicio_aprobados||0}/2`}/></td><td><Status value={row.datos_oficiales_completos?'aprobado':'pendiente'}/></td><td><MiniDocState value={row.carta_inicio_estado} signed={row.carta_inicio_firmada}/></td><td><Status value={row.inicio_formal?'aprobado':'pendiente'}/></td><td><Status value={row.evaluacion_empresa_inicial}/></td><td><Status value={Number(row.talleres_aprobados)>=3?'aprobado':`${row.talleres_aprobados||0}/3`}/></td><td><Status value={row.evaluacion_empresa_final}/></td><td>{row.memoria_final_ruta?<a href={buildFileUrl(row.memoria_final_ruta)} target="_blank" rel="noreferrer"><Status value="aprobado"/></a>:<Status value="pendiente"/>}</td><td><Status value={row.empresa_memoria}/></td><td><Status value={row.biblioteca}/></td><td><Status value={row.laboratorios}/></td><td><Status value={row.direccion}/></td><td><Status value={row.vinculacion}/></td><td><Status value={row.donativo}/></td><td><Status value={row.ingles}/></td><td><Status value={row.datos_alumno}/></td><td><Status value={row.pago_titulo}/></td><td><MiniDocState value={row.carta_final_estado} signed={row.carta_final_firmada}/></td><td><MiniDocState value={row.autorizacion_memoria_estado} signed={row.autorizacion_memoria_firmada}/></td><td><Status value={row.toma_estado}/></td><td><div className="fo-actions fo-current-action">{role===4&&<><button className="fo-primary" onClick={()=>openOfficial(row)}>{professorNextStep(row)}</button></>}{role===1&&row.direccion_id&&row.empresa_memoria==='aprobado'&&row.direccion!=='aprobado'&&<><a className="fo-link" href={row.memoria_final_ruta?buildFileUrl(row.memoria_final_ruta):'#'} target="_blank" rel="noreferrer">Ver memoria</a><button onClick={()=>resolveArea(row.direccion_id,'direccion')}>Aprobar Dirección</button></>}{role===5&&row.vinculacion_id&&row.empresa_memoria==='aprobado'&&row.vinculacion!=='aprobado'&&<><a className="fo-link" href={row.memoria_final_ruta?buildFileUrl(row.memoria_final_ruta):'#'} target="_blank" rel="noreferrer">Ver memoria</a><button onClick={()=>resolveArea(row.vinculacion_id,'vinculacion')}>Aprobar Vinculación</button></>}{role===10&&<span className="fo-muted-action">{professorNextStep(row)}</span>}</div></td></tr>)}</tbody></table></div></div>
+    {selected && official && <OfficialModal selected={selected} setSelected={setSelected} official={official} setOfficial={setOfficial} saveOfficial={saveOfficial} docState={docState} signedDoc={signedDoc} genDoc={genDoc} uploadSigned={uploadSigned} setMail={setMail} authorizeFormalStart={authorizeFormalStart} />}
     {mail && <MailModal mail={mail} setMail={setMail} prepareMail={prepareMail} mailConfig={mailConfig} />}
   </div>;
 }
@@ -515,12 +566,27 @@ function AdminManager({ admins, carreras, form, setForm, save, toggle }) {
   return <div className="fo-card"><div className="fo-card-title"><div><small>SÚPER ADMINISTRADOR</small><h3>Administradores de estadía</h3></div></div><form className="fo-form" onSubmit={save}><Field label="Nombre"><input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} required /></Field><Field label="Apellido"><input value={form.apellido} onChange={e => setForm({ ...form, apellido: e.target.value })} required /></Field><Field label="Correo institucional"><input type="email" value={form.correo} onChange={e => setForm({ ...form, correo: e.target.value })} required /></Field><Field label="Contraseña inicial"><input value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></Field><Field label="Carrera asignada"><select value={form.id_carrera} onChange={e => setForm({ ...form, id_carrera: e.target.value, area_institucional: carreras.find(c => String(c.id_carrera) === String(e.target.value))?.nombre || '' })} required><option value="">Selecciona</option>{carreras.map(c => <option key={c.id_carrera} value={c.id_carrera}>{c.nombre}</option>)}</select></Field><Field label="Teléfono"><input value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} /></Field><button className="fo-primary">Crear administrador</button></form><div className="fo-table-wrap" style={{ marginTop: 18 }}><table className="fo-table"><thead><tr><th>Administrador</th><th>Carrera</th><th>Cargo</th><th>Estado</th><th></th></tr></thead><tbody>{admins.map(item => <tr key={item.id_usuario}><td><b>{item.nombre} {item.apellido}</b><small>{item.correo}</small></td><td>{item.carrera || 'Todas'}</td><td>{item.cargo_institucional || 'Administrador de Estadías'}</td><td><Status value={item.activo ? 'activo' : 'inactivo'} /></td><td><button className="fo-link" onClick={() => toggle(item)}>{item.activo ? 'Desactivar' : 'Activar'}</button></td></tr>)}</tbody></table></div></div>;
 }
 
-function OfficialModal({ selected, setSelected, official, setOfficial, saveOfficial, requestFinalApprovals, docState, signedDoc, genDoc, uploadSigned, setMail, authorizeFormalStart }) {
-  const documentTypes = [
-    ['carta_inicio', 'Carta de inicio formal'], ['carta_finalizacion', 'Carta de finalización / liberación'],
-    ['autorizacion_memoria', 'Autorización de presentación de memoria'], ['acta_toma_protesta', 'Acta de toma de protesta'], ['acta_final', 'Acta final de estadía']
+function OfficialModal({ selected, setSelected, official, setOfficial, saveOfficial, docState, signedDoc, genDoc, uploadSigned, setMail, authorizeFormalStart }) {
+  const closureAreas=['empresa_memoria','biblioteca','laboratorios','direccion','vinculacion','donativo','ingles','datos_alumno','pago_titulo'];
+  const closureReady=closureAreas.every(k=>selected[k]==='aprobado');
+  const allowedDocs=[
+    ['carta_inicio','Carta de inicio formal',Boolean(selected.datos_oficiales_completos)],
+    ['carta_finalizacion','Carta de finalización / liberación',closureReady],
+    ['autorizacion_memoria','Autorización de presentación de memoria',closureReady],
+    ['acta_toma_protesta','Acta de toma de protesta',selected.toma_estado && selected.toma_estado!=='pendiente'],
+    ['acta_final','Acta final de estadía',selected.estado==='terminada']
   ];
-  return <div className="fo-modal-bg" onClick={() => setSelected(null)}><div className="fo-modal" onClick={e => e.stopPropagation()}><div className="fo-modal-head"><div><small>{selected.matricula} · {selected.grupo_nombre}</small><h2>Expediente oficial del proyecto</h2><p>Campos basados en el formato oficial “Datos para registrar el proyecto de estadía”.</p></div><button onClick={() => setSelected(null)}>×</button></div><div className="fo-modal-body"><section className="fo-summary"><b>Alumno</b><span>{official.alumno_nombre} {official.alumno_apellido}</span><b>Matrícula</b><span>{official.matricula}</span><b>Correo</b><span>{official.alumno_correo}</span><b>Teléfono</b><span>{official.alumno_telefono || '—'}</span><b>Carrera</b><span>{official.carrera_nombre}</span><b>Horario</b><span>{official.horario_laboral || '—'}</span></section><div className="fo-official-form">{officialFields.map(([key, label]) => <Field key={key} label={label} full={longFields.has(key)}>{textAreaFields.has(key) ? <textarea value={official[key] || ''} onChange={e => setOfficial({ ...official, [key]: e.target.value })} /> : <input type={key.includes('inversion') ? 'number' : 'text'} value={official[key] ?? ''} onChange={e => setOfficial({ ...official, [key]: e.target.value })} />}</Field>)}<Field label="¿Proyecto de innovación / I+D?"><select value={String(Boolean(official.proyecto_innovacion))} onChange={e => setOfficial({ ...official, proyecto_innovacion: e.target.value === 'true' })}><option value="false">No</option><option value="true">Sí</option></select></Field><Field label="¿El alumno ya trabaja en la empresa?"><select value={String(Boolean(official.alumno_trabaja_empresa))} onChange={e => setOfficial({ ...official, alumno_trabaja_empresa: e.target.value === 'true' })}><option value="false">No</option><option value="true">Sí</option></select></Field></div><div className="fo-actions end"><button onClick={authorizeFormalStart}>Autorizar inicio formal</button><button onClick={requestFinalApprovals}>Solicitar Dirección / Vinculación</button><button className="fo-primary" onClick={saveOfficial}>Guardar expediente oficial</button></div><section className="fo-documents"><h3>Documentos oficiales</h3><p>SkillMatch llena los datos automáticamente. Se conserva el documento generado y la versión firmada.</p>{documentTypes.map(([tipo, nombre]) => <div className="fo-document-row" key={tipo}><div><strong>{nombre}</strong><Status value={docState(tipo)} />{signedDoc(tipo) && <a href={buildFileUrl(signedDoc(tipo))} target="_blank" rel="noreferrer">Ver firmado</a>}</div><div className="fo-actions"><button onClick={() => genDoc(tipo)}>Generar / imprimir</button><button onClick={() => setMail({ tipo: 'ENVIO_DOCUMENTO', para: official.contacto_carta_correo || official.asesor_org_correo || '', cc: official.alumno_correo || '', asunto: `${nombre} - ${official.alumno_nombre} ${official.alumno_apellido}`, mensaje: 'Se comparte el documento generado desde SkillMatch.', documento: tipo })}>Enviar por correo</button><label className="fo-small-upload">Subir firmado<input type="file" accept="application/pdf,image/*" onChange={e => uploadSigned(tipo, e.target.files?.[0])} /></label></div></div>)}</section></div></div></div>;
+  const next=professorNextStep(selected);
+  return <div className="fo-modal-bg" onClick={() => setSelected(null)}><div className="fo-modal" onClick={e => e.stopPropagation()}><div className="fo-modal-head"><div><small>{selected.matricula} · {selected.grupo_nombre}</small><h2>Expediente oficial del proyecto</h2><p>Campos basados en el formato oficial “Datos para registrar el proyecto de estadía”.</p></div><button onClick={() => setSelected(null)}>×</button></div><div className="fo-modal-body">
+    <div className="fo-next-step"><small>SIGUIENTE PASO DEL FLUJO</small><strong>{next}</strong><span>SkillMatch habilita las acciones conforme se cumplen los requisitos anteriores.</span></div>
+    <section className="fo-summary"><b>Alumno</b><span>{official.alumno_nombre} {official.alumno_apellido}</span><b>Matrícula</b><span>{official.matricula}</span><b>Correo</b><span>{official.alumno_correo}</span><b>Teléfono</b><span>{official.alumno_telefono || '—'}</span><b>Carrera</b><span>{official.carrera_nombre}</span><b>Horario</b><span>{official.horario_laboral || '—'}</span></section>
+    <div className="fo-official-form">{officialFields.map(([key, label]) => <Field key={key} label={label} full={longFields.has(key)}>{textAreaFields.has(key) ? <textarea value={official[key] || ''} onChange={e => setOfficial({ ...official, [key]: e.target.value })} /> : <input type={key.includes('inversion') ? 'number' : 'text'} value={official[key] ?? ''} onChange={e => setOfficial({ ...official, [key]: e.target.value })} />}</Field>)}<Field label="¿Proyecto de innovación / I+D?"><select value={String(Boolean(official.proyecto_innovacion))} onChange={e => setOfficial({ ...official, proyecto_innovacion: e.target.value === 'true' })}><option value="false">No</option><option value="true">Sí</option></select></Field><Field label="¿El alumno ya trabaja en la empresa?"><select value={String(Boolean(official.alumno_trabaja_empresa))} onChange={e => setOfficial({ ...official, alumno_trabaja_empresa: e.target.value === 'true' })}><option value="false">No</option><option value="true">Sí</option></select></Field></div>
+    <div className="fo-actions end"><button className="fo-primary" onClick={saveOfficial}>Guardar expediente oficial</button>{selected.carta_inicio_firmada&&!selected.inicio_formal&&<button onClick={authorizeFormalStart}>Autorizar inicio formal</button>}</div>
+    <section className="fo-documents"><h3>Documentos oficiales</h3><p>Los documentos aparecen cuando corresponde en el flujo. SkillMatch conserva el generado y la versión firmada.</p>{allowedDocs.map(([tipo,nombre,allowed])=>{
+      const state=docState(tipo); const generated=state!=='no_generado'; const signed=signedDoc(tipo);
+      return <div className={`fo-document-row ${!allowed?'locked':''}`} key={tipo}><div><strong>{nombre}</strong>{allowed?<Status value={state}/>:<Status value="bloqueado"/>}{signed&&<a href={buildFileUrl(signed)} target="_blank" rel="noreferrer">Ver firmado</a>}{!allowed&&<small>{tipo==='carta_inicio'?'Completa primero el expediente oficial.':tipo==='carta_finalizacion'||tipo==='autorizacion_memoria'?'Se libera cuando todas las validaciones de cierre estén aprobadas.':tipo==='acta_toma_protesta'?'Se libera cuando exista una toma de protesta confirmada.':'Se libera al terminar la estadía.'}</small>}</div><div className="fo-actions">{allowed&&<button onClick={()=>genDoc(tipo)}>{generated?'Ver / imprimir':'Generar / imprimir'}</button>}{allowed&&generated&&<button onClick={()=>setMail({tipo:'ENVIO_DOCUMENTO',para:official.contacto_carta_correo||official.asesor_org_correo||'',cc:official.alumno_correo||'',asunto:`${nombre} - ${official.alumno_nombre} ${official.alumno_apellido}`,mensaje:'Se comparte el documento generado desde SkillMatch.',documento:tipo})}>Enviar por correo</button>}{allowed&&generated&&!signed&&<label className="fo-small-upload">Subir firmado<input type="file" accept="application/pdf,image/*" onChange={e=>uploadSigned(tipo,e.target.files?.[0])}/></label>}</div></div>;
+    })}</section>
+  </div></div></div>;
 }
 
 function MailModal({ mail, setMail, prepareMail, mailConfig }) {

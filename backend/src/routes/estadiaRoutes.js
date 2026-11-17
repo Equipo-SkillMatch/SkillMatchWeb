@@ -56,6 +56,7 @@ router.get('/configuracion-calificaciones', controller.obtenerCalificaciones);
 router.put('/configuracion-calificaciones', controller.actualizarCalificaciones);
 router.get('/servicios/alumnos', controller.alumnosServicios);
 router.get('/servicios/alumnos/:id', controller.detalleAlumnoServicios);
+router.put('/servicios/alumnos/:id/seguro-social', controller.actualizarSeguroSocialAlumno);
 router.get('/profesor/grupos', controller.gruposProfesor);
 router.get('/profesor/grupos/:id', controller.detalleGrupoProfesor);
 router.post('/avances/:idFecha/enlace', controller.entregarEnlace);
@@ -125,7 +126,6 @@ router.put('/cierre/datos-alumno', controller.confirmarDatosTitulo);
 router.post('/cierre/pago-titulo', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirPagoTitulo);
 router.get('/aprobaciones-oficiales', controller.aprobacionesOficiales);
 router.put('/aprobaciones-oficiales/:id', controller.resolverAprobacionOficial);
-router.post('/profesor/estadias/:idEstadia/solicitar-aprobaciones-finales', controller.crearSolicitudAprobacionesFinales);
 
 router.get('/administradores-estadia', controller.listarAdministradoresEstadia);
 router.post('/administradores-estadia', controller.crearAdministradorEstadia);

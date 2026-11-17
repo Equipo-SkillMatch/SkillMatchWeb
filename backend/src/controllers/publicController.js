@@ -284,6 +284,16 @@ exports.responderAprobacionMemoriaEmpresa = async (req,res) => {
     if(!rows.length)return res.status(404).json({ok:false,mensaje:'Enlace de aprobación no válido.'});
     await db.query(`UPDATE validaciones_cierre_estadia SET estado=?,observaciones=?,calificacion_memoria_empresa=?,revisado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_validacion=?`,
       [estado,req.body.observaciones||null,estado==='aprobado'?calificacion:null,rows[0].id_validacion]);
+    if(estado==='aprobado'){
+      const [v]=await db.query('SELECT id_estadia FROM validaciones_cierre_estadia WHERE id_validacion=?',[rows[0].id_validacion]);
+      if(v[0]){
+        for(const area of ['biblioteca','laboratorios','direccion','vinculacion']){
+          await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en) VALUES(?,?,'en_revision',CURRENT_TIMESTAMP)
+            ON CONFLICT(id_estadia,area) DO UPDATE SET estado=CASE WHEN validaciones_cierre_estadia.estado='aprobado' THEN 'aprobado' ELSE 'en_revision' END,enviado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP`,[v[0].id_estadia,area]);
+        }
+        await db.query(`INSERT INTO eventos_notificacion_estadia(id_estadia,tipo,destinatarios,asunto,contexto) VALUES(?,'MEMORIA_EMPRESA_APROBADA','biblioteca,laboratorios,vinculacion,direccion,alumno,asesor','Memoria aprobada por empresa; inicia validación institucional','{}'::jsonb)`,[v[0].id_estadia]);
+      }
+    }
     res.json({ok:true});
   }catch(e){res.status(500).json({ok:false,mensaje:'No se pudo registrar la aprobación.'});}
 };
