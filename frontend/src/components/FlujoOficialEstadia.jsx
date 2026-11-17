@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { API_BASE, buildFileUrl } from '../config/api';
 import { showToast, confirmDialog, promptDialog } from './InstitutionalUI';
 import '../CSS/FlujoOficialEstadia.css';
@@ -53,7 +53,7 @@ const officialFields = [
 const longFields = new Set(['empresa_domicilio', 'proyecto_competencia_impacto', 'proyecto_objetivo_general', 'proyecto_actividades']);
 const textAreaFields = new Set(['proyecto_competencia_impacto', 'proyecto_objetivo_general', 'proyecto_actividades']);
 
-export default function FlujoOficialEstadia({ role }) {
+export default function FlujoOficialEstadia({ role, mode = 'full' }) {
   const [busy, setBusy] = useState(true);
   const [board, setBoard] = useState([]);
   const [flowRow, setFlowRow] = useState(null);
@@ -67,6 +67,9 @@ export default function FlujoOficialEstadia({ role }) {
   const [comps, setComps] = useState([]);
   const [queue, setQueue] = useState([]);
   const [titleQueue, setTitleQueue] = useState([]);
+  const [titleData, setTitleData] = useState(null);
+  const [showTitleData, setShowTitleData] = useState(false);
+  const [titleEditing, setTitleEditing] = useState(false);
   const [selected, setSelected] = useState(null);
   const [official, setOfficial] = useState(null);
   const [docs, setDocs] = useState([]);
@@ -85,13 +88,14 @@ export default function FlujoOficialEstadia({ role }) {
     setBusy(true);
     try {
       if (role === 2) {
-        const [ctx, mi, co, tb] = await Promise.all([
+        const [ctx, mi, co, tb, td] = await Promise.all([
           api('/registro/contexto'), api('/mi-estadia'), api('/mi-estadia/comprobantes-inicio').catch(() => ({ comprobantes: [] })),
-          api('/tablero-oficial').catch(() => ({ filas: [] }))
+          api('/tablero-oficial').catch(() => ({ filas: [] })), api('/cierre/datos-alumno').catch(() => ({ datos: null }))
         ]);
         setStudent({ contexto: ctx.contexto, estadia: mi.estadia });
         setComps(co.comprobantes || []);
         setFlowRow((tb.filas || [])[0] || null);
+        setTitleData(td.datos || null);
         if (mi.estadia) {
           setForm({
             proyecto_titulo: mi.estadia.proyecto_titulo || '',
@@ -204,16 +208,35 @@ export default function FlujoOficialEstadia({ role }) {
     } catch (error) { toast(error.message, 'error'); }
   }
 
+  function openTitleData() {
+    setTitleEditing(false);
+    setShowTitleData(true);
+  }
+
+  async function saveTitleData() {
+    if (!titleData) return;
+    try {
+      const result = await api('/cierre/datos-alumno', { method: 'PATCH', body: JSON.stringify(titleData) });
+      toast(result.mensaje || 'Datos actualizados.');
+      setTitleEditing(false);
+      const fresh = await api('/cierre/datos-alumno');
+      setTitleData(fresh.datos || null);
+    } catch (error) { toast(error.message, 'error'); }
+  }
+
   async function confirmTitleData() {
+    if (!titleData) return toast('No se pudieron cargar tus datos para titulación.', 'error');
     const yes = await confirmDialog({
       title: 'Confirmar datos para título',
-      message: 'Confirma que tu nombre y datos personales están escritos correctamente para los documentos de titulación.',
-      confirmText: 'Sí, mis datos son correctos'
+      message: 'Confirma únicamente después de revisar nombre, matrícula, carrera y años de inicio/finalización. Estos datos se usarán en los documentos finales.',
+      confirmText: 'Sí, confirmar datos'
     });
     if (!yes) return;
     try {
-      await api('/cierre/datos-alumno', { method: 'PUT', body: JSON.stringify({}) });
-      toast('Datos confirmados.');
+      const result = await api('/cierre/datos-alumno', { method: 'PUT', body: JSON.stringify({}) });
+      toast(result.mensaje || 'Datos confirmados.');
+      setShowTitleData(false);
+      await load();
     } catch (error) { toast(error.message, 'error'); }
   }
 
@@ -314,6 +337,9 @@ export default function FlujoOficialEstadia({ role }) {
   function printDoc(tipo, d) {
     const fechaLarga = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
     const alumno = `${d.alumno_nombre || ''} ${d.alumno_apellido || ''}`.trim();
+    const alumnoTitulo = `${d.titulacion_nombre || d.alumno_nombre || ''} ${d.titulacion_apellido || d.alumno_apellido || ''}`.trim();
+    const matriculaTitulo = d.titulacion_matricula || d.matricula;
+    const carreraTitulo = d.titulacion_carrera || d.carrera_nombre;
     const autoridad = `${d.super_nombre || ''} ${d.super_apellido || ''}`.trim();
     const logoUteq = `${window.location.origin}/logos/uteq-logo.png`;
     const logoSkill = `${window.location.origin}/logos/skillmatch-logo.png`;
@@ -350,7 +376,7 @@ export default function FlujoOficialEstadia({ role }) {
       body = `
         <div class="letter-date">Santiago de Querétaro, Qro., a ${esc(fechaLarga)}</div>
         <h1>${title}</h1>
-        <p>Por medio de la presente se hace constar que el alumno <b>${esc(alumno.toUpperCase())}</b>, matrícula <b>${esc(d.matricula)}</b>, de la carrera de <b>${esc(d.carrera_nombre)}</b>, concluyó el proceso académico y documental correspondiente a su Estadía Profesional denominada <b>“${esc(d.proyecto_titulo)}”</b>, realizada en <b>${esc(d.empresa_razon_social)}</b>.</p>
+        <p>Por medio de la presente se hace constar que el alumno <b>${esc(alumnoTitulo.toUpperCase())}</b>, matrícula <b>${esc(matriculaTitulo)}</b>, de la carrera de <b>${esc(carreraTitulo)}</b>, concluyó el proceso académico y documental correspondiente a su Estadía Profesional denominada <b>“${esc(d.proyecto_titulo)}”</b>, realizada en <b>${esc(d.empresa_razon_social)}</b>.</p>
         <p>El expediente cuenta con las liberaciones institucionales requeridas para continuar con el proceso de presentación de memoria y toma de protesta.</p>
         <table class="approval-table"><tr><th>Área</th><th>Responsable / liberación</th></tr>
           <tr><td>Asesor de empresa</td><td>${esc(d.asesor_org_nombre || 'Pendiente')}</td></tr>
@@ -370,8 +396,8 @@ export default function FlujoOficialEstadia({ role }) {
       title = 'AUTORIZACIÓN DE PRESENTACIÓN DE MEMORIA';
       code = 'EA-F-03';
       body = `
-        <div class="letter-date">Querétaro, Qro., a ${esc(fechaLarga)}<br><br>Matrícula ${esc(d.matricula)}</div>
-        <div class="recipient"><b>C. ${esc(alumno.toUpperCase())}</b><br>Candidato al grado correspondiente a ${esc(d.carrera_nombre)}<br><b>P r e s e n t e</b></div>
+        <div class="letter-date">Querétaro, Qro., a ${esc(fechaLarga)}<br><br>Matrícula ${esc(matriculaTitulo)}</div>
+        <div class="recipient"><b>C. ${esc(alumnoTitulo.toUpperCase())}</b><br>Candidato al grado correspondiente a ${esc(carreraTitulo)}<br><b>P r e s e n t e</b></div>
         <h1>${title}</h1>
         <p>Se informa a usted que se autoriza la presentación de la memoria de su Estadía Profesional, titulada <b>“${esc((d.proyecto_titulo || '').toUpperCase())}”</b>, realizada en la organización <b>${esc((d.empresa_razon_social || '').toUpperCase())}</b>.</p>
         <p>Trabajo revisado y liberado dentro del proceso institucional por el Comité de Asesores y las áreas correspondientes:</p>
@@ -392,13 +418,13 @@ export default function FlujoOficialEstadia({ role }) {
         <p>En la <b>Universidad Tecnológica de Querétaro</b>, ubicada en la ciudad de Querétaro, Qro., siendo las <b>${esc(tomaTime)}</b> horas del día <b>${esc(tomaDate)}</b>, se reunieron los ciudadanos:</p>
         <table class="jury"><tr><th>NOMBRES</th><th>FIRMAS</th></tr>${[0,1,2].map(i=>`<tr><td>${esc((jurado[i]?.nombre || `PROFESOR EVALUADOR ${i+1}`).toUpperCase())}</td><td><span class="signature-line"></span></td></tr>`).join('')}</table>
         <p>Quienes procederán a dar fe de la entrega y presentación de la Memoria de Estadía Profesional del alumno:</p>
-        <h2 class="student-name">${esc(alumno.toUpperCase())}</h2>
+        <h2 class="student-name">${esc(alumnoTitulo.toUpperCase())}</h2>
         <p>en virtud de haber cumplido satisfactoriamente con los requisitos institucionales correspondientes al proceso de Estadía Profesional.</p>
-        <p>Por lo que queda facultado(a) para ejercer la carrera de:</p><h2 class="career">${esc(d.carrera_nombre)}</h2>
+        <p>Por lo que queda facultado(a) para ejercer la carrera de:</p><h2 class="career">${esc(carreraTitulo)}</h2>
         <p>A continuación se tomó la protesta de Ley en los términos siguientes:</p>
         <p class="oath"><b>¿PROTESTA USTED EJERCER SU PROFESIÓN CON ENTUSIASMO Y HONRADEZ, PREPARARSE DE FORMA PERMANENTE EN LA CIENCIA, LA TÉCNICA Y LO HUMANO, REPRESENTAR SIEMPRE DE MANERA DIGNA A LA UNIVERSIDAD Y SERVIR CON INTEGRIDAD, INTELIGENCIA, VOLUNTAD Y AMOR A SU PATRIA?</b></p>
         <p class="yes">SÍ, PROTESTO</p>
-        ${signatures([{name:alumno,role:'Nombre y firma del alumno'}])}
+        ${signatures([{name:alumnoTitulo,role:'Nombre y firma del alumno'}])}
         <p class="closing"><b>SI ASÍ LO HICIERE, QUE LA UNIVERSIDAD Y LA NACIÓN SE LO PREMIEN; Y SI NO, SE LO DEMANDEN.</b></p>`;
     } else {
       title = 'ACTA FINAL DE ESTADÍA';
@@ -406,7 +432,7 @@ export default function FlujoOficialEstadia({ role }) {
       const juryAvg = jurado.length ? (jurado.reduce((sum,j)=>sum+Number(j.calificacion||0),0)/jurado.length).toFixed(2) : '—';
       body = `
         <h1>${title}</h1>
-        <div class="info"><b>Alumno</b><span>${esc(alumno)}</span><b>Matrícula</b><span>${esc(d.matricula)}</span><b>Carrera</b><span>${esc(d.carrera_nombre)}</span><b>Grupo</b><span>${esc(d.grupo_nombre)}</span><b>Periodo</b><span>${esc(d.periodo_nombre)}</span><b>Proyecto</b><span>${esc(d.proyecto_titulo)}</span><b>Empresa</b><span>${esc(d.empresa_razon_social)}</span><b>Tutor académico</b><span>${esc(d.asesor_nombre)}</span></div>
+        <div class="info"><b>Alumno</b><span>${esc(alumnoTitulo)}</span><b>Matrícula</b><span>${esc(matriculaTitulo)}</span><b>Carrera</b><span>${esc(carreraTitulo)}</span><b>Grupo</b><span>${esc(d.grupo_nombre)}</span><b>Periodo</b><span>${esc(d.periodo_nombre)}</span><b>Proyecto</b><span>${esc(d.proyecto_titulo)}</span><b>Empresa</b><span>${esc(d.empresa_razon_social)}</span><b>Tutor académico</b><span>${esc(d.asesor_nombre)}</span></div>
         <h2 class="section-title">RESULTADOS ACADÉMICOS</h2>
         <table class="approval-table"><tr><th>Evaluación</th><th>Resultado</th></tr>
           <tr><td>Profesor asesor / promedio de talleres</td><td>${esc(d.calificacion_asesor ?? '—')}</td></tr>
@@ -415,7 +441,7 @@ export default function FlujoOficialEstadia({ role }) {
           <tr><td><b>Promedio del jurado</b></td><td><b>${esc(juryAvg)}</b></td></tr>
         </table>
         <h2 class="section-title">RESULTADO</h2><p>Se hace constar que el alumno concluyó satisfactoriamente su proceso de Estadía Profesional y toma de protesta conforme a los registros de su expediente institucional.</p>
-        ${signatures([{name:alumno,role:'Alumno'},{name:d.asesor_nombre,role:'Tutor académico'},{name:autoridad,role:d.super_cargo || 'Control escolar / Dirección'}])}`;
+        ${signatures([{name:alumnoTitulo,role:'Alumno'},{name:d.asesor_nombre,role:'Tutor académico'},{name:autoridad,role:d.super_cargo || 'Control escolar / Dirección'}])}`;
     }
 
     const win = window.open('', '_blank');
@@ -436,7 +462,9 @@ export default function FlujoOficialEstadia({ role }) {
       student={student} form={form} setForm={setForm} empresa={empresa} manualEmpresa={manualEmpresa}
       buscarRFC={buscarRFC} saveInitial={saveInitial} dias={dias} setDias={setDias} entrada={entrada} setEntrada={setEntrada}
       salida={salida} setSalida={setSalida} comps={comps} flowRow={flowRow}
-      uploadComp={uploadComp} confirmTitleData={confirmTitleData} uploadTitlePayment={uploadTitlePayment}
+      uploadComp={uploadComp} openTitleData={openTitleData} confirmTitleData={confirmTitleData} uploadTitlePayment={uploadTitlePayment}
+      titleData={titleData} setTitleData={setTitleData} showTitleData={showTitleData} setShowTitleData={setShowTitleData}
+      titleEditing={titleEditing} setTitleEditing={setTitleEditing} saveTitleData={saveTitleData}
     />;
   }
 
@@ -445,7 +473,7 @@ export default function FlujoOficialEstadia({ role }) {
   }
 
   return <BoardView
-    role={role} board={board} resolveArea={resolveArea} openOfficial={openOfficial}
+    role={role} mode={mode} board={board} resolveArea={resolveArea} openOfficial={openOfficial}
     admins={admins} carreras={carreras} adminForm={adminForm} setAdminForm={setAdminForm} saveAdmin={saveAdmin} toggleAdmin={toggleAdmin}
     selected={selected} setSelected={setSelected} official={official} setOfficial={setOfficial} saveOfficial={saveOfficial}
     docs={docs} docState={docState} signedDoc={signedDoc} genDoc={genDoc}
@@ -458,28 +486,33 @@ function MiniDocState({ value, signed }) {
   return <div className="fo-doc-state-stack"><span className={generated ? 'done' : ''}>Generada {generated ? '✓' : '○'}</span><span className={signed ? 'done' : ''}>Firmada {signed ? '✓' : '○'}</span></div>;
 }
 
-function StudentProgress({ row }) {
+function studentCurrentStep(row) {
+  if (!row) return { label: 'Preparando expediente', detail: 'SkillMatch cargará tu avance cuando exista una estadía activa.' };
+  if (Number(row.comprobantes_inicio_aprobados || 0) < 2) return { label: 'Documentación inicial', detail: 'Completa y espera la validación de tus comprobantes por Servicios Escolares.' };
+  if (!row.datos_oficiales_completos) return { label: 'Expediente oficial', detail: 'Tu asesor está completando los datos oficiales del proyecto y la empresa.' };
+  if (!row.carta_inicio_firmada) return { label: 'Carta de inicio', detail: 'La carta debe generarse, firmarse y quedar cargada antes del inicio formal.' };
+  if (!row.inicio_formal) return { label: 'Inicio formal', detail: 'Tu asesor debe autorizar formalmente el inicio de la estadía.' };
+  if (row.evaluacion_empresa_inicial !== 'aprobado') return { label: 'Evaluación inicial de empresa', detail: 'La empresa debe completar la primera evaluación.' };
+  if (Number(row.talleres_aprobados || 0) < 3) return { label: `Talleres ${row.talleres_aprobados || 0}/3`, detail: 'Continúa con las entregas habilitadas y espera la revisión de tu asesor.' };
+  if (row.evaluacion_empresa_final !== 'aprobado') return { label: 'Evaluación final de empresa', detail: 'La empresa debe completar la evaluación final.' };
+  if (!row.memoria_final_ruta) return { label: 'Memoria técnica final', detail: 'Sube tu memoria final cuando el módulo quede habilitado.' };
+  if (row.empresa_memoria !== 'aprobado') return { label: 'Revisión de memoria por empresa', detail: 'La empresa debe aprobar primero la memoria antes de las validaciones institucionales.' };
+  if (['biblioteca','laboratorios','direccion','vinculacion'].some(k => row[k] !== 'aprobado')) return { label: 'Validaciones institucionales', detail: 'Biblioteca, Laboratorios, Dirección y Vinculación están revisando tu expediente.' };
+  if (['donativo','ingles','datos_alumno','pago_titulo'].some(k => row[k] !== 'aprobado')) return { label: 'Requisitos de titulación', detail: 'Completa los requisitos pendientes mostrados en Cierre de estadía.' };
+  if (!row.carta_final_firmada || !row.autorizacion_memoria_firmada) return { label: 'Documentos finales', detail: 'Tu asesor debe generar y cargar los documentos finales firmados.' };
+  if (row.toma_estado !== 'terminada') return { label: 'Toma de protesta', detail: 'Tu proceso está listo para la programación y evaluación de toma de protesta.' };
+  return { label: 'Estadía terminada', detail: 'Tu proceso de estadía ha concluido.' };
+}
+
+function StudentStageSummary({ row }) {
   if (!row) return null;
-  const cells = [
-    ['Documentos', Number(row.comprobantes_inicio_aprobados) >= 2 ? 'aprobado' : `${row.comprobantes_inicio_aprobados || 0}/2`],
-    ['Expediente', row.datos_oficiales_completos ? 'aprobado' : 'pendiente'],
-    ['Carta inicio', row.carta_inicio_firmada ? 'aprobado' : row.carta_inicio_estado],
-    ['Inicio formal', row.inicio_formal ? 'aprobado' : 'pendiente'],
-    ['Eval. empresa 1', row.evaluacion_empresa_inicial],
-    ['Talleres', Number(row.talleres_aprobados) >= 3 ? 'aprobado' : `${row.talleres_aprobados || 0}/3`],
-    ['Eval. empresa 2', row.evaluacion_empresa_final],
-    ['Memoria', row.memoria_final_ruta ? 'aprobado' : 'pendiente'],
-    ['Empresa memoria', row.empresa_memoria], ['Biblioteca', row.biblioteca], ['Laboratorios', row.laboratorios],
-    ['Dirección', row.direccion], ['Vinculación', row.vinculacion], ['Donativo', row.donativo], ['Inglés', row.ingles],
-    ['Datos título', row.datos_alumno], ['Pago título', row.pago_titulo], ['Carta final', row.carta_final_firmada ? 'aprobado' : row.carta_final_estado],
-    ['Autorización', row.autorizacion_memoria_firmada ? 'aprobado' : row.autorizacion_memoria_estado], ['Toma', row.toma_estado]
-  ];
-  return <div className="fo-card"><div className="fo-card-title"><div><small>MI RUTA</small><h3>Avance de mi estadía</h3></div></div><div className="fo-progress-grid">{cells.map(([label,value])=><div className="fo-progress-item" key={label}><span>{label}</span><Status value={value}/></div>)}</div></div>;
+  const step=studentCurrentStep(row);
+  return <div className="fo-card fo-current-stage-card"><div><small>ETAPA ACTUAL</small><h3>{step.label}</h3><p>{step.detail}</p></div><div className="fo-stage-hint"><b>¿Quieres ver todo el avance?</b><span>Consulta la ruta completa y los requisitos pendientes en <strong>Cierre de estadía</strong>.</span></div></div>;
 }
 
 function StudentView(props) {
   const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-  const { student, form, setForm, empresa, manualEmpresa, buscarRFC, saveInitial, dias, setDias, entrada, setEntrada, salida, setSalida, comps, flowRow, uploadComp, confirmTitleData, uploadTitlePayment } = props;
+  const { student, form, setForm, empresa, manualEmpresa, buscarRFC, saveInitial, dias, setDias, entrada, setEntrada, salida, setSalida, comps, flowRow, uploadComp, openTitleData, confirmTitleData, uploadTitlePayment, titleData, setTitleData, showTitleData, setShowTitleData, titleEditing, setTitleEditing, saveTitleData } = props;
   const registroGuardado = Boolean(student.estadia);
   return <div className="fo-wrap">
     <div className="fo-hero"><span>PASO A PASO · ESTADÍA</span><h2>Mi estadía profesional</h2><p>SkillMatch te mostrará únicamente lo que corresponde a tu etapa actual y marcará automáticamente cada avance.</p></div>
@@ -495,15 +528,21 @@ function StudentView(props) {
         </form>
       </div> : <div className="fo-card fo-saved-card"><div><small>PASO 1 COMPLETADO</small><h3>✓ Tu información inicial ha sido guardada correctamente</h3><p><b>{student.estadia.proyecto_titulo}</b> · {student.estadia.empresa_razon_social || 'Empresa pendiente de completar por el asesor'} · {student.estadia.horario_laboral}</p></div></div>}
       {registroGuardado && <>
-        <StudentProgress row={flowRow}/>
+        <StudentStageSummary row={flowRow}/>
         <div className="fo-card"><div className="fo-card-title"><div><small>PASO 2 · SERVICIOS ESCOLARES</small><h3>Documentación inicial</h3></div><span>{comps.filter(x => x.estado === 'aprobado').length}/2 aprobados</span></div><p className="fo-help">El pago de inscripción y el pago del cuatrimestre se manejan como un solo requisito. Tu número de seguro social lo administra Servicios Escolares.</p><div className="fo-doc-grid">
           <DocUploadCard tipo="inscripcion" nombre="Inscripción / pago de cuatrimestre" comps={comps} uploadComp={uploadComp} />
           <DocUploadCard tipo="seguro_facultativo" nombre="Comprobante de seguro facultativo" comps={comps} uploadComp={uploadComp} />
         </div></div>
-        {flowRow?.empresa_memoria === 'aprobado' && <div className="fo-card"><div className="fo-card-title"><div><small>CIERRE · TITULACIÓN</small><h3>Datos y pago de título</h3></div></div><div className="fo-doc-grid"><div className="fo-doc"><strong>Visto bueno de datos personales</strong><p>Confirma tus datos cuando las validaciones institucionales hayan avanzado.</p><button className="fo-primary" onClick={confirmTitleData}>Confirmar mis datos</button></div><div className="fo-doc"><strong>Pago de título</strong><p>El botón solo debe usarse dentro del periodo habilitado por Servicios Escolares.</p><label className="fo-upload">Subir comprobante<input type="file" accept="application/pdf,image/*" onChange={e => uploadTitlePayment(e.target.files?.[0])} /></label></div></div></div>}
+        {flowRow?.empresa_memoria === 'aprobado' && <div className="fo-card"><div className="fo-card-title"><div><small>CIERRE · TITULACIÓN</small><h3>Datos y pago de título</h3></div></div><div className="fo-doc-grid"><div className="fo-doc"><strong>Visto bueno de datos personales</strong><p>Revisa primero todos los datos que se usarán en tus documentos de titulación. Podrás corregirlos antes de confirmar.</p><button className="fo-primary" onClick={openTitleData}>{flowRow?.datos_alumno==='aprobado'?'Ver datos confirmados':'Revisar mis datos'}</button></div><div className="fo-doc"><strong>Pago de título</strong><p>El botón solo debe usarse dentro del periodo habilitado por Servicios Escolares.</p><label className="fo-upload">Subir comprobante<input type="file" accept="application/pdf,image/*" onChange={e => uploadTitlePayment(e.target.files?.[0])} /></label></div></div></div>}
       </>}
     </>}
+    {showTitleData && titleData && <TitleDataModal data={titleData} setData={setTitleData} editing={titleEditing} setEditing={setTitleEditing} save={saveTitleData} confirm={confirmTitleData} close={()=>setShowTitleData(false)} />}
   </div>;
+}
+
+function TitleDataModal({ data, setData, editing, setEditing, save, confirm, close }) {
+  const fields=[['nombre','Nombre'],['apellido','Apellidos'],['matricula','Matrícula'],['carrera','Carrera'],['anio_inicio','Año de inicio'],['anio_finalizacion','Año de finalización']];
+  return <div className="fo-modal-bg" onClick={close}><div className="fo-title-modal" onClick={e=>e.stopPropagation()}><div className="fo-modal-head"><div><small>DATOS PARA TITULACIÓN</small><h2>Revisa tus datos oficiales</h2><p>Estos datos serán utilizados en los documentos finales. Corrige cualquier dato antes de confirmar.</p></div><button onClick={close}>×</button></div><div className="fo-modal-body"><div className="fo-title-data-table">{fields.map(([key,label])=><div className="fo-title-data-row" key={key}><span>{label}</span>{editing&&!data.confirmado?<input value={data[key]??''} type={key.startsWith('anio_')?'number':'text'} onChange={e=>setData({...data,[key]:key.startsWith('anio_')?Number(e.target.value):e.target.value})}/>:<strong>{data[key]||'—'}</strong>}</div>)}</div>{data.confirmado?<div className="fo-confirmed-box">✓ Datos confirmados. Si detectas una corrección posterior, debe solicitarse al área administrativa.</div>:<div className="fo-actions end">{editing?<><button onClick={()=>setEditing(false)}>Cancelar edición</button><button className="fo-primary" onClick={save}>Guardar correcciones</button></>:<button onClick={()=>setEditing(true)}>Editar datos</button>}<button className="fo-primary" onClick={confirm}>Confirmar que mis datos son correctos</button></div>}</div></div></div>;
 }
 
 function DocUploadCard({ tipo, nombre, comps, uploadComp }) {
@@ -546,17 +585,28 @@ function professorNextStep(row) {
 }
 
 function BoardView(props) {
-  const { role, board, resolveArea, openOfficial, admins, carreras, adminForm, setAdminForm, saveAdmin, toggleAdmin, selected, setSelected, official, setOfficial, saveOfficial, docs, docState, signedDoc, genDoc, uploadSigned, mail, setMail, prepareMail, mailConfig, authorizeFormalStart } = props;
+  const { role, mode, board, resolveArea, openOfficial, admins, carreras, adminForm, setAdminForm, saveAdmin, toggleAdmin, selected, setSelected, official, setOfficial, saveOfficial, docs, docState, signedDoc, genDoc, uploadSigned, mail, setMail, prepareMail, mailConfig, authorizeFormalStart } = props;
   const [search,setSearch]=useState(''); const [group,setGroup]=useState('');
+  const scrollRef=useRef(null);
   const groups=[...new Set(board.map(x=>x.grupo_nombre).filter(Boolean))];
-  const filtered=board.filter(row=>`${row.nombre} ${row.apellido} ${row.matricula} ${row.proyecto_titulo||''}`.toLowerCase().includes(search.toLowerCase())&&(!group||row.grupo_nombre===group));
-  const title=role===4?'Expedientes de mis alumnos':role===5?'Revisión de memoria · Vinculación':role===10?'Control de mi carrera':'Control institucional';
+  const visibleBoard = mode==='validacion'
+    ? board.filter(row=>row.empresa_memoria==='aprobado' && (role===1 ? row.direccion!=='aprobado' : role===5 ? row.vinculacion!=='aprobado' : true))
+    : board;
+  const filtered=visibleBoard.filter(row=>`${row.nombre} ${row.apellido} ${row.matricula} ${row.proyecto_titulo||''}`.toLowerCase().includes(search.toLowerCase())&&(!group||row.grupo_nombre===group));
+  const title=mode==='validacion'
+    ? (role===1?'Validación de memorias técnicas · Dirección':'Validación de memorias técnicas · Vinculación')
+    : role===4?'Expedientes de mis alumnos':role===5?'Revisión de memoria · Vinculación':role===10?'Control de mi carrera':'Control institucional';
+  const scroll=(dir)=>scrollRef.current?.scrollBy({left:dir*720,behavior:'smooth'});
   return <div className="fo-wrap">
-    <div className="fo-hero"><span>FLUJO OFICIAL DE ESTADÍAS</span><h2>{title}</h2><p>La ruta se alimenta automáticamente. Los documentos muestran por separado si ya fueron generados y si ya se subió la versión firmada.</p></div>
-    {role === 1 && <AdminManager admins={admins} carreras={carreras} form={adminForm} setForm={setAdminForm} save={saveAdmin} toggle={toggleAdmin} />}
-    <div className="fo-card"><div className="fo-board-toolbar"><input placeholder="Buscar nombre, matrícula o proyecto…" value={search} onChange={e=>setSearch(e.target.value)}/><select value={group} onChange={e=>setGroup(e.target.value)}><option value="">Todos los grupos</option>{groups.map(g=><option key={g}>{g}</option>)}</select><strong>{filtered.length} alumnos</strong></div>
+    <div className="fo-hero"><span>FLUJO OFICIAL DE ESTADÍAS</span><h2>{title}</h2><p>{mode==='validacion'?'Aquí aparecen únicamente las memorias que ya fueron aprobadas por la empresa y están listas para tu validación.':'La ruta se alimenta automáticamente. Los documentos muestran por separado si ya fueron generados y si ya se subió la versión firmada.'}</p></div>
+    {role === 1 && mode!=='validacion' && <AdminManager admins={admins} carreras={carreras} form={adminForm} setForm={setAdminForm} save={saveAdmin} toggle={toggleAdmin} />}
+    <div className="fo-card fo-flow-table-card"><div className="fo-board-toolbar"><input placeholder="Buscar nombre, matrícula o proyecto…" value={search} onChange={e=>setSearch(e.target.value)}/><select value={group} onChange={e=>setGroup(e.target.value)}><option value="">Todos los grupos</option>{groups.map(g=><option key={g}>{g}</option>)}</select><strong>{filtered.length} alumnos</strong></div>
       {role===5&&filtered.length===0&&<div className="fo-empty-state"><b>No hay memorias pendientes de Vinculación.</b><span>Los alumnos aparecerán automáticamente cuando la empresa haya aprobado primero su memoria técnica.</span></div>}
-      <div className="fo-table-wrap fo-official-table"><table className="fo-table green"><thead><tr><th className="sticky-col">Alumno</th><th>Grupo</th><th>Docs inicio</th><th>Expediente</th><th>Carta inicio</th><th>Inicio formal</th><th>Eval. empresa 1</th><th>Talleres</th><th>Eval. empresa 2</th><th>Memoria</th><th>Empresa</th><th>Biblioteca</th><th>Labs</th><th>Dirección</th><th>Vinculación</th><th>Donativo</th><th>Inglés</th><th>Datos título</th><th>Pago título</th><th>Carta final</th><th>Autorización</th><th>Toma</th><th>Acción actual</th></tr></thead><tbody>{filtered.map(row => <tr key={row.id_estadia}><td className="sticky-col"><b>{row.nombre} {row.apellido}</b><small>{row.matricula}</small></td><td>{row.grupo_nombre}</td><td><Status value={Number(row.comprobantes_inicio_aprobados)>=2?'aprobado':`${row.comprobantes_inicio_aprobados||0}/2`}/></td><td><Status value={row.datos_oficiales_completos?'aprobado':'pendiente'}/></td><td><MiniDocState value={row.carta_inicio_estado} signed={row.carta_inicio_firmada}/></td><td><Status value={row.inicio_formal?'aprobado':'pendiente'}/></td><td><Status value={row.evaluacion_empresa_inicial}/></td><td><Status value={Number(row.talleres_aprobados)>=3?'aprobado':`${row.talleres_aprobados||0}/3`}/></td><td><Status value={row.evaluacion_empresa_final}/></td><td>{row.memoria_final_ruta?<a href={buildFileUrl(row.memoria_final_ruta)} target="_blank" rel="noreferrer"><Status value="aprobado"/></a>:<Status value="pendiente"/>}</td><td><Status value={row.empresa_memoria}/></td><td><Status value={row.biblioteca}/></td><td><Status value={row.laboratorios}/></td><td><Status value={row.direccion}/></td><td><Status value={row.vinculacion}/></td><td><Status value={row.donativo}/></td><td><Status value={row.ingles}/></td><td><Status value={row.datos_alumno}/></td><td><Status value={row.pago_titulo}/></td><td><MiniDocState value={row.carta_final_estado} signed={row.carta_final_firmada}/></td><td><MiniDocState value={row.autorizacion_memoria_estado} signed={row.autorizacion_memoria_firmada}/></td><td><Status value={row.toma_estado}/></td><td><div className="fo-actions fo-current-action">{role===4&&<><button className="fo-primary" onClick={()=>openOfficial(row)}>{professorNextStep(row)}</button></>}{role===1&&row.direccion_id&&row.empresa_memoria==='aprobado'&&row.direccion!=='aprobado'&&<><a className="fo-link" href={row.memoria_final_ruta?buildFileUrl(row.memoria_final_ruta):'#'} target="_blank" rel="noreferrer">Ver memoria</a><button onClick={()=>resolveArea(row.direccion_id,'direccion')}>Aprobar Dirección</button></>}{role===5&&row.vinculacion_id&&row.empresa_memoria==='aprobado'&&row.vinculacion!=='aprobado'&&<><a className="fo-link" href={row.memoria_final_ruta?buildFileUrl(row.memoria_final_ruta):'#'} target="_blank" rel="noreferrer">Ver memoria</a><button onClick={()=>resolveArea(row.vinculacion_id,'vinculacion')}>Aprobar Vinculación</button></>}{role===10&&<span className="fo-muted-action">{professorNextStep(row)}</span>}</div></td></tr>)}</tbody></table></div></div>
+      <div className="fo-table-navigation"><div><b>Flujo completo</b><span>Usa las flechas para recorrer todas las etapas sin cambiar el zoom del navegador.</span></div><div><button onClick={()=>scroll(-1)} aria-label="Mover tabla a la izquierda">← Anterior</button><button onClick={()=>scroll(1)} aria-label="Mover tabla a la derecha">Siguiente →</button></div></div>
+      <div className="fo-table-wrap fo-official-table" ref={scrollRef}><table className="fo-table blue"><thead>
+        <tr className="fo-phase-row"><th colSpan="2">Alumno</th><th colSpan="5">Inicio formal</th><th colSpan="3">Desarrollo académico</th><th colSpan="9">Cierre institucional</th><th colSpan="3">Documentos finales</th><th rowSpan="2">Acción actual</th></tr>
+        <tr><th className="sticky-col">Alumno</th><th>Grupo</th><th>Docs inicio</th><th>Expediente</th><th>Carta inicio</th><th>Inicio formal</th><th>Eval. empresa 1</th><th>Talleres</th><th>Eval. empresa 2</th><th>Memoria</th><th>Empresa</th><th>Biblioteca</th><th>Labs</th><th>Dirección</th><th>Vinculación</th><th>Donativo</th><th>Inglés</th><th>Datos título</th><th>Pago título</th><th>Carta final</th><th>Autorización</th><th>Toma</th></tr>
+      </thead><tbody>{filtered.map(row => <tr key={row.id_estadia}><td className="sticky-col"><b>{row.nombre} {row.apellido}</b><small>{row.matricula}</small></td><td>{row.grupo_nombre}</td><td><Status value={Number(row.comprobantes_inicio_aprobados)>=2?'aprobado':`${row.comprobantes_inicio_aprobados||0}/2`}/></td><td><Status value={row.datos_oficiales_completos?'aprobado':'pendiente'}/></td><td><MiniDocState value={row.carta_inicio_estado} signed={row.carta_inicio_firmada}/></td><td><Status value={row.inicio_formal?'aprobado':'pendiente'}/></td><td><Status value={row.evaluacion_empresa_inicial}/></td><td><Status value={Number(row.talleres_aprobados)>=3?'aprobado':`${row.talleres_aprobados||0}/3`}/></td><td><Status value={row.evaluacion_empresa_final}/></td><td>{row.memoria_final_ruta?<a href={buildFileUrl(row.memoria_final_ruta)} target="_blank" rel="noreferrer"><Status value="aprobado"/></a>:<Status value="pendiente"/>}</td><td><Status value={row.empresa_memoria}/></td><td><Status value={row.biblioteca}/></td><td><Status value={row.laboratorios}/></td><td><Status value={row.direccion}/></td><td><Status value={row.vinculacion}/></td><td><Status value={row.donativo}/></td><td><Status value={row.ingles}/></td><td><Status value={row.datos_alumno}/></td><td><Status value={row.pago_titulo}/></td><td><MiniDocState value={row.carta_final_estado} signed={row.carta_final_firmada}/></td><td><MiniDocState value={row.autorizacion_memoria_estado} signed={row.autorizacion_memoria_firmada}/></td><td><Status value={row.toma_estado}/></td><td><div className="fo-actions fo-current-action">{role===4&&<button className="fo-primary" onClick={()=>openOfficial(row)}>{professorNextStep(row)}</button>}{role===1&&row.direccion_id&&row.empresa_memoria==='aprobado'&&row.direccion!=='aprobado'&&<><a className="fo-link" href={row.memoria_final_ruta?buildFileUrl(row.memoria_final_ruta):'#'} target="_blank" rel="noreferrer">Ver memoria</a><button onClick={()=>resolveArea(row.direccion_id,'direccion')}>Aprobar Dirección</button></>}{role===5&&row.vinculacion_id&&row.empresa_memoria==='aprobado'&&row.vinculacion!=='aprobado'&&<><a className="fo-link" href={row.memoria_final_ruta?buildFileUrl(row.memoria_final_ruta):'#'} target="_blank" rel="noreferrer">Ver memoria</a><button onClick={()=>resolveArea(row.vinculacion_id,'vinculacion')}>Aprobar Vinculación</button></>}{role===10&&<span className="fo-muted-action">{professorNextStep(row)}</span>}</div></td></tr>)}</tbody></table></div></div>
     {selected && official && <OfficialModal selected={selected} setSelected={setSelected} official={official} setOfficial={setOfficial} saveOfficial={saveOfficial} docState={docState} signedDoc={signedDoc} genDoc={genDoc} uploadSigned={uploadSigned} setMail={setMail} authorizeFormalStart={authorizeFormalStart} />}
     {mail && <MailModal mail={mail} setMail={setMail} prepareMail={prepareMail} mailConfig={mailConfig} />}
   </div>;

@@ -535,11 +535,22 @@ exports.catalogosV6 = async (req,res) => {
     const [profesores]=await db.query(`SELECT p.id_profesor,p.id_carrera,p.tutor_estadia,u.nombre,u.apellido,u.correo,c.nombre carrera
       FROM profesores p JOIN usuarios u ON u.id_usuario=p.id_profesor LEFT JOIN carreras c ON c.id_carrera=p.id_carrera
       WHERE u.estado='activo' ${idCarrera?'AND p.id_carrera=?':''} ORDER BY u.apellido,u.nombre`,idCarrera?[idCarrera]:[]);
-    const [estudiantes]=await db.query(`SELECT e.id_estudiante,e.matricula,e.carrera,e.id_grupo_escolar,ge.id_carrera,u.nombre,u.apellido,u.correo,u.estado estado_usuario,
+    const [estudiantes]=await db.query(`SELECT e.id_estudiante,e.matricula,COALESCE(ce.nombre,e.carrera) carrera,e.id_grupo_escolar,
+      COALESCE(ge.id_carrera,ce.id_carrera) id_carrera,u.nombre,u.apellido,u.correo,u.estado estado_usuario,
       COALESCE(ge.nombre,e.grupo) grupo_escolar,ge.generacion
-      FROM estudiantes e JOIN usuarios u ON u.id_usuario=e.id_estudiante LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar
-      WHERE 1=1 ${idCarrera?'AND ge.id_carrera=?':''}
-      ORDER BY e.carrera,ge.nombre,u.apellido,u.nombre`,idCarrera?[idCarrera]:[]);
+      FROM estudiantes e
+      JOIN usuarios u ON u.id_usuario=e.id_estudiante
+      LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar
+      LEFT JOIN LATERAL (
+        SELECT c2.id_carrera,c2.nombre FROM carreras c2
+        WHERE lower(c2.nombre)=lower(e.carrera)
+           OR (e.carrera ILIKE '%software%' AND c2.nombre ILIKE '%software%')
+           OR (e.carrera ILIKE '%mecatr%' AND c2.nombre ILIKE '%mecatr%')
+        ORDER BY CASE WHEN lower(c2.nombre)=lower(e.carrera) THEN 0 ELSE 1 END,c2.id_carrera
+        LIMIT 1
+      ) ce ON TRUE
+      WHERE 1=1 ${idCarrera?'AND COALESCE(ge.id_carrera,ce.id_carrera)=?':''}
+      ORDER BY COALESCE(ce.nombre,e.carrera),ge.nombre,u.apellido,u.nombre`,idCarrera?[idCarrera]:[]);
     const config=await configCalificaciones();
     res.json({ok:true,carreras,gruposEscolares,profesores,estudiantes,config});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar los catálogos V6.'});}
@@ -565,6 +576,16 @@ exports.actualizarAlumnoEscolar = async (req,res) => {
         const [grupo]=await db.query('SELECT id_grupo_escolar,nombre,id_carrera FROM grupos_escolares WHERE id_grupo_escolar=? AND activo=TRUE',[id_grupo_escolar]);
         if(!grupo.length) return res.status(400).json({ok:false,mensaje:'El grupo escolar seleccionado no existe o está inactivo.'});
         if(!(await administradorPuedeCarrera(req,grupo[0].id_carrera))) return res.status(403).json({ok:false,mensaje:'No puedes asignar alumnos a un grupo de otra carrera.'});
+        const [alumno]=await db.query(`SELECT COALESCE(ge.id_carrera,ce.id_carrera) id_carrera
+          FROM estudiantes e
+          LEFT JOIN grupos_escolares ge ON ge.id_grupo_escolar=e.id_grupo_escolar
+          LEFT JOIN LATERAL (SELECT c2.id_carrera FROM carreras c2
+            WHERE lower(c2.nombre)=lower(e.carrera)
+               OR (e.carrera ILIKE '%software%' AND c2.nombre ILIKE '%software%')
+               OR (e.carrera ILIKE '%mecatr%' AND c2.nombre ILIKE '%mecatr%')
+            ORDER BY CASE WHEN lower(c2.nombre)=lower(e.carrera) THEN 0 ELSE 1 END,c2.id_carrera LIMIT 1) ce ON TRUE
+          WHERE e.id_estudiante=? LIMIT 1`,[req.params.id]);
+        if(alumno[0]?.id_carrera && Number(alumno[0].id_carrera)!==Number(grupo[0].id_carrera)) return res.status(400).json({ok:false,mensaje:'El alumno pertenece a otra carrera y no puede asignarse a este grupo.'});
         grupoNombre=grupo[0].nombre;
       }
       await db.query('UPDATE estudiantes SET id_grupo_escolar=?, grupo=? WHERE id_estudiante=?',[id_grupo_escolar||null,grupoNombre,req.params.id]);
@@ -2027,10 +2048,12 @@ exports.datosDocumentoOficial = async (req,res) => {
     const [x]=await db.query(`SELECT e.*,u.nombre alumno_nombre,u.apellido alumno_apellido,u.correo alumno_correo,u.telefono alumno_telefono,
       es.matricula,es.numero_seguro_social,COALESCE(c.nombre,es.carrera) carrera_nombre,g.nombre grupo_nombre,p.nombre periodo_nombre,p.fecha_inicio periodo_inicio,p.fecha_fin periodo_fin,
       CONCAT(up.nombre,' ',up.apellido) asesor_nombre,up.correo asesor_correo,up.telefono asesor_telefono,up.cargo_institucional asesor_cargo,
-      sa.nombre super_nombre,sa.apellido super_apellido,sa.cargo_institucional super_cargo,sa.area_institucional super_area,sa.correo super_correo,sa.extension super_extension,sa.oficina super_oficina
+      sa.nombre super_nombre,sa.apellido super_apellido,sa.cargo_institucional super_cargo,sa.area_institucional super_area,sa.correo super_correo,sa.extension super_extension,sa.oficina super_oficina,
+      dt.nombre titulacion_nombre,dt.apellido titulacion_apellido,dt.matricula titulacion_matricula,dt.carrera titulacion_carrera,dt.anio_inicio titulacion_anio_inicio,dt.anio_finalizacion titulacion_anio_finalizacion,dt.confirmado titulacion_confirmado
       FROM estadias e JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
       JOIN grupos_estadia g ON g.id_grupo=e.id_grupo LEFT JOIN carreras c ON c.id_carrera=g.id_carrera JOIN periodos_estadia p ON p.id_periodo=e.id_periodo
       JOIN usuarios up ON up.id_usuario=e.id_profesor
+      LEFT JOIN datos_titulacion_estadia dt ON dt.id_estadia=e.id_estadia
       LEFT JOIN LATERAL (SELECT * FROM usuarios z WHERE z.id_rol=1 AND z.estado='activo' ORDER BY z.id_usuario LIMIT 1) sa ON TRUE
       WHERE e.id_estadia=? LIMIT 1`,[id]);
     if(!x.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
@@ -2195,16 +2218,53 @@ exports.tableroOficialEstadias = async (req,res) => {
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudo cargar el tablero oficial.'});}
 };
 
+exports.obtenerDatosTituloAlumno = async (req,res) => {
+  if(!requireRoles(req,res,[2])) return;
+  try{
+    const [e]=await db.query(`SELECT e.id_estadia,u.nombre,u.apellido,es.matricula,COALESCE(c.nombre,es.carrera) carrera,
+      EXTRACT(YEAR FROM COALESCE(es.fecha_inicio_carrera,u.fecha_registro::date))::INTEGER anio_inicio,
+      EXTRACT(YEAR FROM COALESCE(e.fecha_fin,p.fecha_fin))::INTEGER anio_finalizacion
+      FROM estadias e JOIN usuarios u ON u.id_usuario=e.id_estudiante JOIN estudiantes es ON es.id_estudiante=e.id_estudiante
+      JOIN periodos_estadia p ON p.id_periodo=e.id_periodo LEFT JOIN grupos_estadia g ON g.id_grupo=e.id_grupo LEFT JOIN carreras c ON c.id_carrera=g.id_carrera
+      WHERE e.id_estudiante=? ORDER BY e.creada_en DESC LIMIT 1`,[req.usuario.id_usuario]);
+    if(!e.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
+    await db.query(`INSERT INTO datos_titulacion_estadia(id_estadia,nombre,apellido,matricula,carrera,anio_inicio,anio_finalizacion)
+      VALUES(?,?,?,?,?,?,?) ON CONFLICT(id_estadia) DO NOTHING`,[e[0].id_estadia,e[0].nombre,e[0].apellido,e[0].matricula,e[0].carrera,e[0].anio_inicio,e[0].anio_finalizacion]);
+    const [rows]=await db.query('SELECT * FROM datos_titulacion_estadia WHERE id_estadia=?',[e[0].id_estadia]);
+    res.json({ok:true,datos:rows[0]});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron cargar tus datos para titulación.'});}
+};
+
+exports.actualizarDatosTituloAlumno = async (req,res) => {
+  if(!requireRoles(req,res,[2])) return;
+  try{
+    const [e]=await db.query('SELECT id_estadia FROM estadias WHERE id_estudiante=? ORDER BY creada_en DESC LIMIT 1',[req.usuario.id_usuario]);
+    if(!e.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
+    const [actual]=await db.query('SELECT confirmado FROM datos_titulacion_estadia WHERE id_estadia=?',[e[0].id_estadia]);
+    if(actual[0]?.confirmado)return res.status(409).json({ok:false,mensaje:'Tus datos ya fueron confirmados. Solicita una corrección institucional si necesitas modificarlos.'});
+    const b=req.body||{};
+    const nombre=String(b.nombre||'').trim(),apellido=String(b.apellido||'').trim(),matricula=String(b.matricula||'').trim(),carrera=String(b.carrera||'').trim();
+    const anioInicio=Number(b.anio_inicio),anioFin=Number(b.anio_finalizacion);
+    if(!nombre||!apellido||!matricula||!carrera||!Number.isInteger(anioInicio)||!Number.isInteger(anioFin))return res.status(400).json({ok:false,mensaje:'Completa correctamente todos los datos para titulación.'});
+    if(anioInicio<2000||anioInicio>2100||anioFin<anioInicio||anioFin>2100)return res.status(400).json({ok:false,mensaje:'Revisa los años de inicio y finalización.'});
+    await db.query(`UPDATE datos_titulacion_estadia SET nombre=?,apellido=?,matricula=?,carrera=?,anio_inicio=?,anio_finalizacion=?,actualizado_en=CURRENT_TIMESTAMP WHERE id_estadia=?`,[nombre,apellido,matricula,carrera,anioInicio,anioFin,e[0].id_estadia]);
+    res.json({ok:true,mensaje:'Datos para titulación actualizados.'});
+  }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron actualizar tus datos para titulación.'});}
+};
+
 exports.confirmarDatosTitulo = async (req,res) => {
   if(!requireRoles(req,res,[2])) return;
   try{
     const [e]=await db.query('SELECT id_estadia FROM estadias WHERE id_estudiante=? ORDER BY creada_en DESC LIMIT 1',[req.usuario.id_usuario]);
     if(!e.length)return res.status(404).json({ok:false,mensaje:'Estadía no encontrada.'});
+    const [datos]=await db.query('SELECT * FROM datos_titulacion_estadia WHERE id_estadia=?',[e[0].id_estadia]);
+    if(!datos.length)return res.status(409).json({ok:false,mensaje:'Primero revisa y guarda tus datos para titulación.'});
+    await db.query('UPDATE datos_titulacion_estadia SET confirmado=TRUE,confirmado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP WHERE id_estadia=?',[e[0].id_estadia]);
     await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,observaciones,revisado_por,revisado_en,enviado_en)
       VALUES(?,'datos_alumno','aprobado',?, ?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
       ON CONFLICT(id_estadia,area) DO UPDATE SET estado='aprobado',observaciones=EXCLUDED.observaciones,revisado_por=EXCLUDED.revisado_por,revisado_en=CURRENT_TIMESTAMP,enviado_en=CURRENT_TIMESTAMP`,
-      [e[0].id_estadia,req.body.observaciones||'Alumno confirma que sus datos son correctos para titulación.',req.usuario.id_usuario]);
-    res.json({ok:true,mensaje:'Tus datos quedaron confirmados.'});
+      [e[0].id_estadia,req.body.observaciones||'Alumno revisó y confirmó sus datos para titulación.',req.usuario.id_usuario]);
+    res.json({ok:true,mensaje:'Tus datos quedaron confirmados para los documentos de titulación.'});
   }catch(e){console.error(e);res.status(500).json({ok:false,mensaje:'No se pudieron confirmar tus datos.'});}
 };
 

@@ -122,6 +122,8 @@ router.post('/correo/eventos/:idEvento/enviar', controller.enviarCorreoPreparado
 router.post('/correo/procesar-pendientes', controller.procesarCorreosPendientes);
 router.get('/tablero-oficial', controller.tableroOficialEstadias);
 
+router.get('/cierre/datos-alumno', controller.obtenerDatosTituloAlumno);
+router.patch('/cierre/datos-alumno', controller.actualizarDatosTituloAlumno);
 router.put('/cierre/datos-alumno', controller.confirmarDatosTitulo);
 router.post('/cierre/pago-titulo', uploadEvidencias.single('archivo'), procesarYSubirACloudinary, controller.subirPagoTitulo);
 router.get('/aprobaciones-oficiales', controller.aprobacionesOficiales);

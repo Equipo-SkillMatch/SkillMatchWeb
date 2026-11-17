@@ -45,6 +45,7 @@ const menuVinculacion = [
   { key: 'postulaciones', label: 'Postulaciones', icon: 'clipboard' },
   { key: 'candidatos', label: 'Candidatos', icon: 'target' },
   { key: 'reportes', label: 'Reportes', icon: 'report' },
+  { key: 'estadias', label: 'Validar memorias técnicas', icon: 'graduation' },
   { key: 'perfil', label: 'Mi perfil', icon: 'user' },
 ];
 
