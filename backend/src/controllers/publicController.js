@@ -291,7 +291,18 @@ exports.responderAprobacionMemoriaEmpresa = async (req,res) => {
           await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en) VALUES(?,?,'en_revision',CURRENT_TIMESTAMP)
             ON CONFLICT(id_estadia,area) DO UPDATE SET estado=CASE WHEN validaciones_cierre_estadia.estado='aprobado' THEN 'aprobado' ELSE 'en_revision' END,enviado_en=CURRENT_TIMESTAMP,actualizado_en=CURRENT_TIMESTAMP`,[v[0].id_estadia,area]);
         }
-        await db.query(`INSERT INTO eventos_notificacion_estadia(id_estadia,tipo,destinatarios,asunto,contexto) VALUES(?,'MEMORIA_EMPRESA_APROBADA','biblioteca,laboratorios,vinculacion,direccion,alumno,asesor','Memoria aprobada por empresa; inicia validación institucional','{}'::jsonb)`,[v[0].id_estadia]);
+        const [donativoInfo]=await db.query(`SELECT e.id_estadia,p.monto_donativo,p.fecha_inicio FROM estadias e JOIN periodos_estadia p ON p.id_periodo=e.id_periodo WHERE e.id_estadia=? LIMIT 1`,[v[0].id_estadia]);
+        if(donativoInfo.length){
+          const anio=donativoInfo[0].fecha_inicio?new Date(donativoInfo[0].fecha_inicio).getFullYear():new Date().getFullYear();
+          const referencia=`DON-${anio}-${String(v[0].id_estadia).padStart(6,'0')}`;
+          await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,enviado_en,referencia_donativo,monto_donativo)
+            VALUES(?,'servicios_escolares','pendiente',CURRENT_TIMESTAMP,?,?)
+            ON CONFLICT(id_estadia,area) DO UPDATE SET
+              referencia_donativo=COALESCE(validaciones_cierre_estadia.referencia_donativo,EXCLUDED.referencia_donativo),
+              monto_donativo=COALESCE(validaciones_cierre_estadia.monto_donativo,EXCLUDED.monto_donativo),
+              actualizado_en=CURRENT_TIMESTAMP`,[v[0].id_estadia,referencia,Number(donativoInfo[0].monto_donativo||0)]);
+        }
+        await db.query(`INSERT INTO eventos_notificacion_estadia(id_estadia,tipo,destinatarios,asunto,contexto) VALUES(?,'MEMORIA_EMPRESA_APROBADA','biblioteca,laboratorios,vinculacion,direccion,servicios_escolares,alumno,asesor','Memoria aprobada por empresa; inicia validación institucional y donativo','{}'::jsonb)`,[v[0].id_estadia]);
       }
     }
     res.json({ok:true});

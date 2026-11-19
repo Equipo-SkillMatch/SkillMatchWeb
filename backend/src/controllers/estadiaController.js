@@ -1564,8 +1564,8 @@ exports.subirDonativo = async (req,res) => {
     const hoy=new Date();
     if(estInfo[0]?.fecha_inicio_donativo && hoy<new Date(estInfo[0].fecha_inicio_donativo)) return res.status(400).json({ok:false,mensaje:'El periodo para subir el donativo todavía no inicia.'});
     if(estInfo[0]?.fecha_fin_donativo && hoy>new Date(String(estInfo[0].fecha_fin_donativo)+'T23:59:59')) return res.status(400).json({ok:false,mensaje:'El periodo para subir el donativo ya terminó.'});
-    const [prevDon]=await db.query("SELECT estado FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='servicios_escolares' LIMIT 1",[x[0].id_estadia]);
-    if(prevDon.length && !['rechazado','requiere_correccion'].includes(prevDon[0].estado)) return res.status(409).json({ok:false,mensaje:'El comprobante de donativo ya fue enviado. Solo puede reemplazarse si Servicios Escolares lo rechaza o solicita corrección.'});
+    const [prevDon]=await db.query("SELECT estado,ruta_archivo FROM validaciones_cierre_estadia WHERE id_estadia=? AND area='servicios_escolares' LIMIT 1",[x[0].id_estadia]);
+    if(prevDon.length && prevDon[0].ruta_archivo && !['rechazado','requiere_correccion'].includes(prevDon[0].estado)) return res.status(409).json({ok:false,mensaje:'El comprobante de donativo ya fue enviado. Solo puede reemplazarse si Servicios Escolares lo rechaza o solicita corrección.'});
     const referencia=`DON-${new Date().getFullYear()}-${String(x[0].id_estadia).padStart(6,'0')}`;
     await db.query(`INSERT INTO validaciones_cierre_estadia(id_estadia,area,estado,ruta_archivo,nombre_archivo,mime_type,enviado_en,referencia_donativo,monto_donativo)
       VALUES(?,'servicios_escolares','en_revision',?,?,?,CURRENT_TIMESTAMP,?,?)
