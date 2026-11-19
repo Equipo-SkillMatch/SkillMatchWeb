@@ -146,8 +146,11 @@ export default function ModuloEstadias(){
     else {
       const allowed=new Set(['mi-estadia','guias']);
       if(miEstadia?.inicio_formal_autorizado){allowed.add('avances');}
-      if(miEstadia?.empresa_memoria_estado==='aprobado'){allowed.add('idiomas');}
-      if(miEstadia?.empresa_memoria_estado==='aprobado'){allowed.add('cierre');}
+      if(miEstadia?.empresa_memoria_estado==='aprobado'){
+        allowed.add('idiomas');
+        allowed.add('servicios');
+        allowed.add('cierre');
+      }
       displayTabs=tabs.filter(x=>allowed.has(x[0]));
     }
   }
